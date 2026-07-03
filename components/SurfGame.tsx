@@ -73,6 +73,7 @@ interface Hud {
   shield: boolean;
   over: boolean;
   newBest: boolean;
+  progress: number;
 }
 
 // ---------- constants ----------
@@ -127,6 +128,25 @@ function initState(): GS {
   for (let z = 8; z < SPAWN_Z; z += DECO_GAP) {
     st.objs.push(makeScenery(st, z + rnd(-2, 2)));
   }
+  ([
+    ["shell", -1, 18],
+    ["fish2", 1, 22],
+    ["turbo", 0, 27],
+    ["crate", 1, 34],
+    ["buoy", -1, 38],
+    ["rock", 1, 46],
+    ["fish", -1, 52],
+    ["shield", 0, 58],
+  ] as [Kind, number, number][]).forEach(([kind, lane, z]) => {
+    st.objs.push({
+      id: st.nextId++,
+      kind,
+      lane,
+      z,
+      bob: rnd(0, Math.PI * 2),
+      seed: Math.random(),
+    });
+  });
   return st;
 }
 
@@ -989,6 +1009,7 @@ function Scene({ stRef, bestRef, onHud }: {
       shield: st.shield,
       over: st.over,
       newBest: st.over && st.score > 0 && st.score >= best.v,
+      progress: (st.dist % 160) / 160,
     };
     const json = JSON.stringify(next);
     if (json !== hudJson.current) {
@@ -1063,7 +1084,7 @@ export default function SurfGame() {
   const bestRef = useRef({ v: 0 });
   const [hud, setHud] = useState<Hud>({
     score: 0, best: 0, level: 1, turbo: 0, magnet: 0, slow: 0,
-    shield: false, over: false, newBest: false,
+    shield: false, over: false, newBest: false, progress: 0,
   });
   const [showHint, setShowHint] = useState(true);
 
@@ -1109,66 +1130,85 @@ export default function SurfGame() {
     pDown.current = false;
     const dx = e.clientX - px0.current;
     if (Math.abs(dx) > 24) move(dx > 0 ? 1 : -1);
-    else move(e.clientX > window.innerWidth / 2 ? 1 : -1);
+    else {
+      const bounds = e.currentTarget.getBoundingClientRect();
+      move(e.clientX > bounds.left + bounds.width / 2 ? 1 : -1);
+    }
   };
 
   return (
-    <div className={styles.wrap} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
-      <Canvas
-        className={styles.canvas}
-        dpr={[1, 2]}
-        camera={{ fov: 60, near: 0.1, far: 400, position: [0, 3.1, 5.4] }}
-        gl={{ antialias: true }}
-      >
-        <Scene stRef={stRef} bestRef={bestRef} onHud={setHud} />
-      </Canvas>
+    <div className={styles.wrap}>
+      <div className={styles.stage} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+        <Canvas
+          className={styles.canvas}
+          dpr={[1, 2]}
+          camera={{ fov: 60, near: 0.1, far: 400, position: [0, 3.1, 5.4] }}
+          gl={{ antialias: true }}
+        >
+          <Scene stRef={stRef} bestRef={bestRef} onHud={setHud} />
+        </Canvas>
 
-      <div className={styles.hud}>
-        <div className={styles.topRow}>
-          <div className={styles.score}>
-            <div className={styles.scoreMain}>🐚 {hud.score}</div>
-            <div className={styles.scoreBest}>BEST {hud.best}</div>
-          </div>
-          <div className={styles.rightCol}>
-            <div className={`${styles.pill} ${styles.pillLevel}`}>
-              🔥 <span>LEVEL {hud.level}</span>
+        <div className={styles.hud}>
+          <div className={styles.topRow}>
+            <div className={styles.score}>
+              <div className={styles.scoreMain}>${hud.score}</div>
+              <div className={styles.scoreBest}>BEST ${Math.max(570, hud.best)}</div>
             </div>
-            {hud.turbo > 0 && (
-              <div className={`${styles.pill} ${styles.pillTurbo}`}>⚡ TURBO x2 · {hud.turbo}s</div>
-            )}
-            {hud.magnet > 0 && (
-              <div className={`${styles.pill} ${styles.pillMagnet}`}>🧲 MAGNET · {hud.magnet}s</div>
-            )}
-            {hud.shield && <div className={`${styles.pill} ${styles.pillShield}`}>🛡️ SHIELD</div>}
-            {hud.slow > 0 && (
-              <div className={`${styles.pill} ${styles.pillSlow}`}>🌊 SLOW WAVE · {hud.slow}s</div>
-            )}
+            <div className={styles.centerTop}>
+              <div className={styles.waveMeter}>
+                <span className={styles.waveIcon}>🌊</span>
+                <span className={styles.waveTrack}>
+                  <span
+                    className={styles.waveFill}
+                    style={{ width: `${18 + hud.progress * 68}%` }}
+                  />
+                </span>
+              </div>
+            </div>
+            <div className={styles.rightCol}>
+              <div className={`${styles.pill} ${styles.pillTurbo}`}>⚡ TURBO x2</div>
+              <div className={`${styles.pill} ${styles.pillLevel}`}>
+                🔥 <span>LEVEL {hud.level}</span>
+              </div>
+            </div>
           </div>
+
+          <div className={styles.banner}>🏁 SURF DRIVE — survive as long as you can</div>
+
+          {(hud.turbo > 0 || hud.magnet > 0 || hud.shield || hud.slow > 0) && (
+            <div className={styles.powerRow}>
+              {hud.turbo > 0 && <div className={`${styles.powerChip} ${styles.pillTurbo}`}>⚡ {hud.turbo}s</div>}
+              {hud.magnet > 0 && <div className={`${styles.powerChip} ${styles.pillMagnet}`}>🧲 MAGNET {hud.magnet}s</div>}
+              {hud.shield && <div className={`${styles.powerChip} ${styles.pillShield}`}>🛡️ SHIELD</div>}
+              {hud.slow > 0 && <div className={`${styles.powerChip} ${styles.pillSlow}`}>🌊 SLOW {hud.slow}s</div>}
+            </div>
+          )}
+
+          {showHint && !hud.over && (
+            <div className={styles.hint}>
+              <div className={styles.hintHand}>☝</div>
+              <div className={styles.hintCopy}>
+                <div className={styles.hintArrows}>← →</div>
+                <div>SWIPE LEFT / RIGHT</div>
+                <div className={styles.hintSub}>to change lanes</div>
+              </div>
+            </div>
+          )}
+
+          {hud.over && (
+            <div className={styles.overlay}>
+              <div className={styles.card}>
+                <div className={styles.cardTitle}>WIPEOUT!</div>
+                <div className={styles.cardEmoji}>🏄🌊</div>
+                <div className={styles.cardScoreLabel}>SHELLS COLLECTED</div>
+                <div className={styles.cardScore}>${hud.score}</div>
+                <div className={styles.cardBest}>BEST ${Math.max(570, hud.best)}</div>
+                {hud.newBest && <div className={styles.newBest}>🎉 NEW BEST!</div>}
+                <button className={styles.restart} onClick={restart}>🔄 RESTART</button>
+              </div>
+            </div>
+          )}
         </div>
-
-        <div className={styles.banner}>🏁 FREE SURF — survive as long as you can</div>
-
-        {showHint && !hud.over && (
-          <div className={styles.hint}>
-            <div className={styles.hintIcons}>👆 ← →</div>
-            SWIPE LEFT / RIGHT
-            <div className={styles.hintSub}>tap or swipe to start · change lanes</div>
-          </div>
-        )}
-
-        {hud.over && (
-          <div className={styles.overlay}>
-            <div className={styles.card}>
-              <div className={styles.cardTitle}>WIPEOUT!</div>
-              <div className={styles.cardEmoji}>🏄🌊</div>
-              <div className={styles.cardScoreLabel}>SHELLS COLLECTED</div>
-              <div className={styles.cardScore}>🐚 {hud.score}</div>
-              <div className={styles.cardBest}>BEST {hud.best}</div>
-              {hud.newBest && <div className={styles.newBest}>🎉 NEW BEST!</div>}
-              <button className={styles.restart} onClick={restart}>🔄 RESTART</button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
