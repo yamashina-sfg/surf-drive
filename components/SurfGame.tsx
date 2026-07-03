@@ -578,14 +578,34 @@ export default function SurfGame() {
       const tilt = (st.playerLane - st.playerPos) * 0.45;
       const ps = Math.min(W * 0.3, 130); // board length
 
-      // spray behind the board
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      for (let i = 0; i < 10; i++) {
-        const a = rnd(-0.5, 0.5);
-        const r = rnd(4, ps * 0.45);
-        ctx.globalAlpha = rnd(0.2, 0.7);
+      // spray + foam at the board tail
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      for (let i = 0; i < 14; i++) {
+        const a = rnd(-1.1, 1.1);
+        const r = rnd(2, ps * 0.34);
+        ctx.globalAlpha = rnd(0.25, 0.8);
         ctx.beginPath();
-        ctx.arc(px + Math.sin(a) * r * 1.6, pyy + ps * 0.28 + Math.cos(a) * r * 0.4, rnd(2, 6), 0, Math.PI * 2);
+        ctx.arc(
+          px + Math.sin(a) * r * 1.9,
+          pyy + ps * 0.58 + Math.abs(Math.cos(a)) * r * 0.5,
+          rnd(2, 7),
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+      // drifting side bubbles
+      for (let i = 0; i < 4; i++) {
+        const t = (st.time * 0.7 + i * 0.73) % 1;
+        ctx.globalAlpha = 0.35 * (1 - t);
+        ctx.beginPath();
+        ctx.arc(
+          px + (i % 2 === 0 ? -1 : 1) * ps * (0.55 + i * 0.09),
+          pyy + ps * (0.5 - t * 0.5),
+          ps * 0.035 * (1 + t),
+          0,
+          Math.PI * 2
+        );
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -596,57 +616,164 @@ export default function SurfGame() {
         ctx.translate(px, pyy);
         ctx.rotate(tilt);
 
-        // board
-        ctx.fillStyle = "#fdf6e3";
+        const by = ps * 0.16; // board center offset below player origin
+
+        // water shadow under board
+        ctx.fillStyle = "rgba(6,60,110,0.18)";
         ctx.beginPath();
-        ctx.ellipse(0, ps * 0.16, ps * 0.16, ps * 0.42, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#ff9f1c";
-        ctx.beginPath();
-        ctx.ellipse(0, ps * 0.16, ps * 0.055, ps * 0.36, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, by + ps * 0.06, ps * 0.21, ps * 0.46, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // legs
-        ctx.strokeStyle = "#c68642";
-        ctx.lineWidth = ps * 0.075;
+        // surfboard: narrow nose pointing away, rounded wide tail
+        const bg = ctx.createLinearGradient(-ps * 0.2, 0, ps * 0.2, 0);
+        bg.addColorStop(0, "#fbf6e8");
+        bg.addColorStop(0.5, "#fdf9ee");
+        bg.addColorStop(1, "#e7d9b8");
+        ctx.fillStyle = bg;
+        ctx.beginPath();
+        ctx.moveTo(0, by - ps * 0.47);
+        ctx.bezierCurveTo(ps * 0.10, by - ps * 0.40, ps * 0.17, by - ps * 0.12, ps * 0.165, by + ps * 0.10);
+        ctx.bezierCurveTo(ps * 0.16, by + ps * 0.32, ps * 0.10, by + ps * 0.44, 0, by + ps * 0.44);
+        ctx.bezierCurveTo(-ps * 0.10, by + ps * 0.44, -ps * 0.16, by + ps * 0.32, -ps * 0.165, by + ps * 0.10);
+        ctx.bezierCurveTo(-ps * 0.17, by - ps * 0.12, -ps * 0.10, by - ps * 0.40, 0, by - ps * 0.47);
+        ctx.fill();
+
+        // orange center stripe, tapering with the board
+        const sg = ctx.createLinearGradient(0, by - ps * 0.4, 0, by + ps * 0.4);
+        sg.addColorStop(0, "#ffc14f");
+        sg.addColorStop(1, "#ef8f21");
+        ctx.fillStyle = sg;
+        ctx.beginPath();
+        ctx.moveTo(0, by - ps * 0.43);
+        ctx.bezierCurveTo(ps * 0.05, by - ps * 0.3, ps * 0.06, by, ps * 0.05, by + ps * 0.2);
+        ctx.bezierCurveTo(ps * 0.045, by + ps * 0.34, ps * 0.02, by + ps * 0.385, 0, by + ps * 0.385);
+        ctx.bezierCurveTo(-ps * 0.02, by + ps * 0.385, -ps * 0.045, by + ps * 0.34, -ps * 0.05, by + ps * 0.2);
+        ctx.bezierCurveTo(-ps * 0.06, by, -ps * 0.05, by - ps * 0.3, 0, by - ps * 0.43);
+        ctx.fill();
+        // gloss highlight along the rail
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.lineWidth = ps * 0.014;
+        ctx.beginPath();
+        ctx.moveTo(-ps * 0.105, by - ps * 0.28);
+        ctx.quadraticCurveTo(-ps * 0.135, by + ps * 0.02, -ps * 0.11, by + ps * 0.3);
+        ctx.stroke();
+
+        // soft shadow where the surfer stands
+        ctx.fillStyle = "rgba(90,60,20,0.14)";
+        ctx.beginPath();
+        ctx.ellipse(0, by - ps * 0.02, ps * 0.14, ps * 0.05, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ----- surfer (back view) -----
+        const fy = by - ps * 0.03; // foot line on the deck
+        const skin = ctx.createLinearGradient(-ps * 0.18, 0, ps * 0.18, 0);
+        skin.addColorStop(0, "#e8ab70");
+        skin.addColorStop(0.55, "#d3935a");
+        skin.addColorStop(1, "#b97a45");
+
+        // legs: knees slightly bent, feet apart (surf stance)
+        ctx.strokeStyle = skin;
         ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = ps * 0.088;
         ctx.beginPath();
-        ctx.moveTo(-ps * 0.07, ps * 0.13);
-        ctx.lineTo(-ps * 0.06, -ps * 0.05);
-        ctx.moveTo(ps * 0.08, ps * 0.1);
-        ctx.lineTo(ps * 0.06, -ps * 0.05);
+        ctx.moveTo(-ps * 0.065, fy - ps * 0.30);
+        ctx.lineTo(-ps * 0.098, fy - ps * 0.15);
+        ctx.lineTo(-ps * 0.085, fy - ps * 0.01);
+        ctx.moveTo(ps * 0.065, fy - ps * 0.30);
+        ctx.lineTo(ps * 0.102, fy - ps * 0.14);
+        ctx.lineTo(ps * 0.09, fy + ps * 0.02);
         ctx.stroke();
 
-        // shorts
-        ctx.fillStyle = "#ff6b35";
+        // feet
+        ctx.fillStyle = "#c4854a";
         ctx.beginPath();
-        ctx.roundRect(-ps * 0.11, -ps * 0.16, ps * 0.22, ps * 0.14, ps * 0.04);
+        ctx.ellipse(-ps * 0.085, fy + ps * 0.005, ps * 0.048, ps * 0.028, -0.2, 0, Math.PI * 2);
+        ctx.ellipse(ps * 0.09, fy + ps * 0.035, ps * 0.05, ps * 0.03, 0.2, 0, Math.PI * 2);
         ctx.fill();
 
-        // torso
-        ctx.fillStyle = "#d99058";
+        // board shorts with hem
+        const short = ctx.createLinearGradient(-ps * 0.15, 0, ps * 0.15, 0);
+        short.addColorStop(0, "#ff9350");
+        short.addColorStop(0.5, "#f2762e");
+        short.addColorStop(1, "#d55a1a");
+        ctx.fillStyle = short;
         ctx.beginPath();
-        ctx.roundRect(-ps * 0.1, -ps * 0.38, ps * 0.2, ps * 0.24, ps * 0.07);
+        ctx.moveTo(-ps * 0.112, fy - ps * 0.42);
+        ctx.lineTo(ps * 0.112, fy - ps * 0.42);
+        ctx.bezierCurveTo(ps * 0.135, fy - ps * 0.34, ps * 0.142, fy - ps * 0.28, ps * 0.128, fy - ps * 0.235);
+        ctx.lineTo(ps * 0.038, fy - ps * 0.255);
+        ctx.lineTo(0, fy - ps * 0.30);
+        ctx.lineTo(-ps * 0.038, fy - ps * 0.255);
+        ctx.lineTo(-ps * 0.128, fy - ps * 0.235);
+        ctx.bezierCurveTo(-ps * 0.142, fy - ps * 0.28, -ps * 0.135, fy - ps * 0.34, -ps * 0.112, fy - ps * 0.42);
+        ctx.closePath();
         ctx.fill();
+        ctx.fillStyle = "rgba(130,45,0,0.35)";
+        ctx.fillRect(-ps * 0.112, fy - ps * 0.43, ps * 0.224, ps * 0.025);
 
-        // arms out
-        ctx.strokeStyle = "#d99058";
-        ctx.lineWidth = ps * 0.06;
+        // torso: shoulders wider than waist, subtle spine shading
+        ctx.fillStyle = skin;
         ctx.beginPath();
-        ctx.moveTo(-ps * 0.09, -ps * 0.3);
-        ctx.lineTo(-ps * 0.3, -ps * 0.36);
-        ctx.moveTo(ps * 0.09, -ps * 0.3);
-        ctx.lineTo(ps * 0.3, -ps * 0.36);
+        ctx.moveTo(-ps * 0.10, fy - ps * 0.42);
+        ctx.bezierCurveTo(-ps * 0.115, fy - ps * 0.52, -ps * 0.135, fy - ps * 0.60, -ps * 0.13, fy - ps * 0.66);
+        ctx.quadraticCurveTo(0, fy - ps * 0.73, ps * 0.13, fy - ps * 0.66);
+        ctx.bezierCurveTo(ps * 0.135, fy - ps * 0.60, ps * 0.115, fy - ps * 0.52, ps * 0.10, fy - ps * 0.42);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(120,70,30,0.22)";
+        ctx.lineWidth = ps * 0.012;
+        ctx.beginPath();
+        ctx.moveTo(0, fy - ps * 0.47);
+        ctx.lineTo(0, fy - ps * 0.62);
         ctx.stroke();
 
-        // head + hair
-        ctx.fillStyle = "#e8a86c";
+        // arms: spread wide, raised at the wrists for balance
+        ctx.strokeStyle = skin;
+        ctx.lineWidth = ps * 0.062;
         ctx.beginPath();
-        ctx.arc(0, -ps * 0.47, ps * 0.085, 0, Math.PI * 2);
+        ctx.moveTo(-ps * 0.115, fy - ps * 0.64);
+        ctx.lineTo(-ps * 0.24, fy - ps * 0.68);
+        ctx.lineTo(-ps * 0.335, fy - ps * 0.76);
+        ctx.moveTo(ps * 0.115, fy - ps * 0.64);
+        ctx.lineTo(ps * 0.24, fy - ps * 0.68);
+        ctx.lineTo(ps * 0.335, fy - ps * 0.76);
+        ctx.stroke();
+        ctx.fillStyle = "#d3935a";
+        ctx.beginPath();
+        ctx.arc(-ps * 0.348, fy - ps * 0.77, ps * 0.034, 0, Math.PI * 2);
+        ctx.arc(ps * 0.348, fy - ps * 0.77, ps * 0.034, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = "#6b3f23";
+
+        // neck + head
+        ctx.fillStyle = "#cf8f55";
+        ctx.fillRect(-ps * 0.03, fy - ps * 0.77, ps * 0.06, ps * 0.07);
+        const headY = fy - ps * 0.845;
+        ctx.fillStyle = skin;
         ctx.beginPath();
-        ctx.arc(0, -ps * 0.5, ps * 0.085, Math.PI * 0.95, Math.PI * 2.05);
+        ctx.arc(0, headY, ps * 0.096, 0, Math.PI * 2);
+        ctx.fill();
+        // ears
+        ctx.fillStyle = "#d3935a";
+        ctx.beginPath();
+        ctx.arc(-ps * 0.096, headY + ps * 0.012, ps * 0.023, 0, Math.PI * 2);
+        ctx.arc(ps * 0.096, headY + ps * 0.012, ps * 0.023, 0, Math.PI * 2);
+        ctx.fill();
+        // hair: brown back-of-head cap with a spiky crown
+        const hg = ctx.createLinearGradient(0, headY - ps * 0.13, 0, headY + ps * 0.05);
+        hg.addColorStop(0, "#7d5431");
+        hg.addColorStop(1, "#52321a");
+        ctx.fillStyle = hg;
+        ctx.beginPath();
+        ctx.arc(0, headY - ps * 0.005, ps * 0.099, Math.PI * 0.86, Math.PI * 2.14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-ps * 0.072, headY - ps * 0.062);
+        ctx.quadraticCurveTo(-ps * 0.052, headY - ps * 0.135, -ps * 0.02, headY - ps * 0.092);
+        ctx.quadraticCurveTo(0, headY - ps * 0.15, ps * 0.03, headY - ps * 0.098);
+        ctx.quadraticCurveTo(ps * 0.062, headY - ps * 0.128, ps * 0.077, headY - ps * 0.058);
+        ctx.closePath();
         ctx.fill();
 
         ctx.restore();
@@ -658,7 +785,7 @@ export default function SurfGame() {
         ctx.fillStyle = "rgba(60,220,255,0.14)";
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(px, pyy - ps * 0.15, ps * 0.55, 0, Math.PI * 2);
+        ctx.arc(px, pyy - ps * 0.2, ps * 0.62, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
