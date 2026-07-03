@@ -47,7 +47,7 @@ interface Particle {
 }
 
 interface GS {
-  running: boolean;
+  started: boolean;
   over: boolean;
   time: number;
   dist: number;
@@ -116,7 +116,7 @@ const BEST_KEY = "surf-drive-best";
 
 function initState(): GS {
   return {
-    running: true,
+    started: false,
     over: false,
     time: 0,
     dist: 0,
@@ -193,6 +193,11 @@ export default function SurfGame() {
     const move = (dir: -1 | 1) => {
       const st = stRef.current;
       if (st.over) return;
+      if (!st.started) {
+        st.started = true; // first input starts the run
+        setShowHint(false);
+        return;
+      }
       st.playerLane = Math.max(-1, Math.min(1, st.playerLane + dir));
       setShowHint(false);
     };
@@ -309,6 +314,11 @@ export default function SurfGame() {
           p.life -= dt;
         });
         st.parts = st.parts.filter((p) => p.life > 0);
+        return;
+      }
+      if (!st.started) {
+        // idle on the start screen: water animates, nothing spawns or moves
+        st.time += dt;
         return;
       }
       st.time += dt;
@@ -772,7 +782,7 @@ export default function SurfGame() {
         {showHint && !hud.over && (
           <div className={styles.hint}>
             👆 ← → SWIPE LEFT / RIGHT
-            <div className={styles.hintSub}>to change lanes</div>
+            <div className={styles.hintSub}>tap or swipe to start · change lanes</div>
           </div>
         )}
 
