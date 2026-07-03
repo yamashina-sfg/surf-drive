@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
 import styles from "./SurfGame.module.css";
 
 // ---------- types ----------
@@ -19,31 +21,24 @@ type Kind =
   | "turbo"
   | "magnet"
   | "shield"
-  | "slow";
+  | "slow"
+  | "palm"
+  | "island";
 
 interface Obj {
+  id: number;
   kind: Kind;
-  lane: number; // -1 | 0 | 1 (float while magnet pulls)
-  z: number; // world depth, 1 = player plane
-  bob: number; // phase for bobbing animation
+  lane: number; // -1|0|1 for gameplay, wider floats for scenery
+  z: number; // meters ahead of the player
+  bob: number;
+  seed: number;
 }
 
-interface Deco {
-  side: -1 | 1;
-  z: number;
-  emoji: string;
-}
-
-interface Particle {
+interface Ring {
   x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  max: number;
+  z: number;
+  t: number; // 0..1 progress
   color: string;
-  size: number;
-  text?: string;
 }
 
 interface GS {
@@ -55,16 +50,17 @@ interface GS {
   decoDist: number;
   score: number;
   level: number;
-  playerLane: number; // target lane (int)
-  playerPos: number; // rendered lane (float, lerps to playerLane)
+  playerLane: number;
+  playerPos: number;
   turboT: number;
   magnetT: number;
   slowT: number;
   shield: boolean;
   invulnT: number;
   objs: Obj[];
-  decos: Deco[];
-  parts: Particle[];
+  rings: Ring[];
+  nextId: number;
+  rev: number; // bumped whenever objs are added/removed
 }
 
 interface Hud {
@@ -81,41 +77,32 @@ interface Hud {
 
 // ---------- constants ----------
 
-const SPAWN_Z = 24;
-const ROW_GAP = 4.4;
-const DECO_GAP = 2.6;
+const LANE_X = 2.3;
+const SPAWN_Z = 78;
+const ROW_GAP = 12;
+const DECO_GAP = 7;
 const OBSTACLES: Kind[] = ["rock", "wood", "crate", "buoy", "fin", "jelly"];
 const COLLECTIBLES: Kind[] = ["fish", "fish2", "shell", "star"];
 const POWERUPS: Kind[] = ["turbo", "magnet", "shield", "slow"];
-
-const EMOJI: Record<Kind, string> = {
-  fish: "🐟",
-  fish2: "🐠",
-  shell: "🐚",
-  star: "⭐",
-  rock: "🪨",
-  wood: "🪵",
-  crate: "📦",
-  buoy: "🛟",
-  fin: "🦈",
-  jelly: "🪼",
-  turbo: "⚡",
-  magnet: "🧲",
-  shield: "🛡️",
-  slow: "🌊",
-};
-
-const VALUE: Partial<Record<Kind, number>> = {
-  fish: 1,
-  fish2: 1,
-  shell: 2,
-  star: 3,
-};
-
+const VALUE: Partial<Record<Kind, number>> = { fish: 1, fish2: 1, shell: 2, star: 3 };
 const BEST_KEY = "surf-drive-best";
 
-function initState(): GS {
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+function makeScenery(st: GS, z: number): Obj {
   return {
+    id: st.nextId++,
+    kind: Math.random() < 0.2 ? "island" : "palm",
+    lane: (Math.random() < 0.5 ? -1 : 1) * rnd(2.4, 3.8),
+    z,
+    bob: rnd(0, Math.PI * 2),
+    seed: Math.random(),
+  };
+}
+
+function initState(): GS {
+  const st: GS = {
     started: false,
     over: false,
     time: 0,
@@ -131,1078 +118,1041 @@ function initState(): GS {
     slowT: 0,
     shield: false,
     invulnT: 0,
-    objs: [
-      { kind: "shell", lane: -1, z: 8.8, bob: 0.2 },
-      { kind: "fish2", lane: 0, z: 10.4, bob: 1.5 },
-      { kind: "crate", lane: 1, z: 12.8, bob: 2.4 },
-      { kind: "rock", lane: -1, z: 15.2, bob: 0.8 },
-      { kind: "turbo", lane: 0, z: 17.6, bob: 2.9 },
-      { kind: "buoy", lane: 1, z: 20.2, bob: 1.1 },
-    ],
-    decos: [
-      { side: -1, z: 6, emoji: "🌴" },
-      { side: 1, z: 10, emoji: "🌴" },
-      { side: -1, z: 15, emoji: "🏝️" },
-      { side: 1, z: 20, emoji: "🌴" },
-    ],
-    parts: [],
+    objs: [],
+    rings: [],
+    nextId: 1,
+    rev: 0,
   };
+  // pre-populate side scenery so the water isn't empty on load
+  for (let z = 8; z < SPAWN_Z; z += DECO_GAP) {
+    st.objs.push(makeScenery(st, z + rnd(-2, 2)));
+  }
+  return st;
 }
 
-const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+function spawnRow(st: GS) {
+  const r = Math.random();
+  if (r < 0.55) {
+    const lanes = [-1, 0, 1].sort(() => Math.random() - 0.5);
+    const count = st.level >= 3 && Math.random() < 0.55 ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      st.objs.push({
+        id: st.nextId++, kind: pick(OBSTACLES), lane: lanes[i],
+        z: SPAWN_Z, bob: rnd(0, Math.PI * 2), seed: Math.random(),
+      });
+    }
+    if (Math.random() < 0.5) {
+      st.objs.push({
+        id: st.nextId++, kind: pick(COLLECTIBLES), lane: lanes[2],
+        z: SPAWN_Z + rnd(0, 4), bob: rnd(0, Math.PI * 2), seed: Math.random(),
+      });
+    }
+  } else if (r < 0.88) {
+    const lane = pick([-1, 0, 1]);
+    const kind = pick(COLLECTIBLES);
+    const n = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      st.objs.push({
+        id: st.nextId++, kind: Math.random() < 0.75 ? kind : pick(COLLECTIBLES),
+        lane, z: SPAWN_Z + i * 3.1, bob: rnd(0, Math.PI * 2), seed: Math.random(),
+      });
+    }
+  } else {
+    st.objs.push({
+      id: st.nextId++, kind: pick(POWERUPS), lane: pick([-1, 0, 1]),
+      z: SPAWN_Z, bob: rnd(0, Math.PI * 2), seed: Math.random(),
+    });
+  }
+  st.rev++;
+}
+
+function update(st: GS, dt: number, best: { v: number }) {
+  st.rings.forEach((p) => (p.t += dt * 2.2));
+  st.rings = st.rings.filter((p) => p.t < 1);
+  st.time += dt;
+  if (st.over || !st.started) return;
+
+  st.level = Math.min(15, 1 + Math.floor(st.time / 18));
+
+  let speed = 9 + st.level * 0.7;
+  if (st.turboT > 0) speed *= 1.5;
+  if (st.slowT > 0) speed *= 0.55;
+
+  st.turboT = Math.max(0, st.turboT - dt);
+  st.magnetT = Math.max(0, st.magnetT - dt);
+  st.slowT = Math.max(0, st.slowT - dt);
+  st.invulnT = Math.max(0, st.invulnT - dt);
+
+  const dz = speed * dt;
+  st.dist += dz;
+  st.rowDist += dz;
+  st.decoDist += dz;
+
+  if (st.rowDist >= ROW_GAP) {
+    st.rowDist = 0;
+    spawnRow(st);
+  }
+  if (st.decoDist >= DECO_GAP) {
+    st.decoDist = 0;
+    st.objs.push(makeScenery(st, SPAWN_Z));
+    st.rev++;
+  }
+
+  st.playerPos += (st.playerLane - st.playerPos) * Math.min(1, dt * 9);
+
+  const mult = st.turboT > 0 ? 2 : 1;
+  for (const o of st.objs) {
+    o.z -= dz;
+    if (st.magnetT > 0 && COLLECTIBLES.includes(o.kind) && o.z < 16 && o.z > 0) {
+      o.lane += (st.playerPos - o.lane) * Math.min(1, dt * 6);
+      o.z -= dz * 0.7;
+    }
+  }
+
+  const keep: Obj[] = [];
+  let removed = false;
+  for (const o of st.objs) {
+    let alive = o.z > -8;
+    const gameplay = o.kind !== "palm" && o.kind !== "island";
+    if (
+      alive && gameplay &&
+      o.z < 1.1 && o.z > -0.9 &&
+      Math.abs(o.lane - st.playerPos) < 0.45
+    ) {
+      const x = st.playerPos * LANE_X;
+      if (COLLECTIBLES.includes(o.kind)) {
+        st.score += (VALUE[o.kind] || 1) * mult;
+        st.rings.push({ x, z: 0, t: 0, color: "#ffe066" });
+        alive = false;
+      } else if (POWERUPS.includes(o.kind)) {
+        if (o.kind === "turbo") st.turboT = 6;
+        else if (o.kind === "magnet") st.magnetT = 7;
+        else if (o.kind === "shield") st.shield = true;
+        else if (o.kind === "slow") st.slowT = 5;
+        st.rings.push({ x, z: 0, t: 0, color: "#7ce0ff" });
+        alive = false;
+      } else if (st.invulnT <= 0) {
+        if (st.shield) {
+          st.shield = false;
+          st.invulnT = 1.5;
+          st.rings.push({ x, z: 0, t: 0, color: "#21c8ff" });
+          alive = false;
+        } else {
+          st.over = true;
+          st.rings.push({ x, z: 0, t: 0, color: "#ffffff" });
+          if (st.score > best.v) {
+            best.v = st.score;
+            localStorage.setItem(BEST_KEY, String(st.score));
+          }
+        }
+      }
+    }
+    if (alive) keep.push(o);
+    else removed = true;
+  }
+  st.objs = keep;
+  if (removed) st.rev++;
+}
+
+// ---------- canvas textures (client only, cached) ----------
+
+const texCache = new Map<string, THREE.Texture>();
+
+function itemTexture(key: string, emoji: string, badge = false): THREE.Texture {
+  const hit = texCache.get(key);
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  if (badge) {
+    const rg = g.createRadialGradient(128, 128, 20, 128, 128, 128);
+    rg.addColorStop(0, "rgba(140,225,255,0.95)");
+    rg.addColorStop(0.6, "rgba(140,225,255,0.35)");
+    rg.addColorStop(1, "rgba(140,225,255,0)");
+    g.fillStyle = rg;
+    g.fillRect(0, 0, 256, 256);
+    g.fillStyle = "#1a9be0";
+    g.beginPath();
+    g.arc(128, 128, 86, 0, Math.PI * 2);
+    g.fill();
+    g.lineWidth = 10;
+    g.strokeStyle = "#ffffff";
+    g.stroke();
+    g.font = "100px sans-serif";
+  } else {
+    const rg = g.createRadialGradient(128, 128, 10, 128, 128, 120);
+    rg.addColorStop(0, "rgba(255,255,255,0.55)");
+    rg.addColorStop(0.5, "rgba(255,255,255,0.12)");
+    rg.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = rg;
+    g.fillRect(0, 0, 256, 256);
+    g.font = "150px sans-serif";
+  }
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(emoji, 128, badge ? 132 : 130);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  texCache.set(key, t);
+  return t;
+}
+
+function woodTexture(): THREE.Texture {
+  const hit = texCache.get("wood");
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#b07f4a";
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4; i++) {
+    g.fillStyle = i % 2 ? "#a5713c" : "#b8874f";
+    g.fillRect(0, i * 64, 256, 60);
+    g.fillStyle = "rgba(90,55,20,0.5)";
+    g.fillRect(0, i * 64 + 60, 256, 4);
+  }
+  g.strokeStyle = "#7c5426";
+  g.lineWidth = 14;
+  g.strokeRect(7, 7, 242, 242);
+  g.fillStyle = "rgba(60,35,10,0.25)";
+  for (let i = 0; i < 30; i++) g.fillRect(rnd(20, 230), rnd(10, 245), rnd(4, 20), 2);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  texCache.set("wood", t);
+  return t;
+}
+
+function softCircleTexture(): THREE.Texture {
+  const hit = texCache.get("soft");
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const rg = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  rg.addColorStop(0, "rgba(255,255,255,1)");
+  rg.addColorStop(0.6, "rgba(255,255,255,0.7)");
+  rg.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = rg;
+  g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  texCache.set("soft", t);
+  return t;
+}
+
+function ringTexture(): THREE.Texture {
+  const hit = texCache.get("ring");
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.strokeStyle = "rgba(255,255,255,1)";
+  g.lineWidth = 10;
+  g.beginPath();
+  g.arc(64, 64, 50, 0, Math.PI * 2);
+  g.stroke();
+  const t = new THREE.CanvasTexture(c);
+  texCache.set("ring", t);
+  return t;
+}
+
+const EMOJI_SPRITE: Partial<Record<Kind, string>> = {
+  fish: "🐟", fish2: "🐠", shell: "🐚", star: "⭐",
+  turbo: "⚡", magnet: "🧲", shield: "🛡️", slow: "🌊",
+};
+
+// ---------- water shader ----------
+
+const WATER_VS = /* glsl */ `
+uniform float uTime;
+uniform float uScroll;
+varying vec2 vXZ;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  float ahead = -w.z;
+  w.y += sin(w.x * 0.7 + uTime * 1.8) * 0.05
+       + sin((ahead + uScroll) * 0.55 + uTime * 0.6) * 0.07;
+  vXZ = vec2(w.x, ahead);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}
+`;
+
+const WATER_FS = /* glsl */ `
+precision highp float;
+varying vec2 vXZ;
+uniform float uTime;
+uniform float uScroll;
+uniform float uPlayerX;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+  return v;
+}
+void main() {
+  float x = vXZ.x;
+  float z = vXZ.y;
+  float s = z + uScroll;
+  vec3 deep = vec3(0.04, 0.36, 0.70);
+  vec3 mid  = vec3(0.12, 0.58, 0.88);
+  vec3 farc = vec3(0.68, 0.90, 0.97);
+  float df = clamp(z / 85.0, 0.0, 1.0);
+  float body = fbm(vec2(x * 0.22, s * 0.10) + uTime * 0.03) * 0.5 + 0.25;
+  vec3 col = mix(deep, mid, body);
+  col = mix(col, farc, df * df);
+  col += (fbm(vec2(x * 0.9, s * 0.5)) - 0.5) * 0.06;
+  float sp = pow(noise(vec2(x * 4.0 + uTime * 0.7, s * 2.2)), 14.0);
+  col += sp * 1.2 * (0.2 + 0.8 * df);
+  float foam = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    float lx = float(i) * 2.3;
+    float band = smoothstep(0.95, 0.2, abs(x - lx));
+    float tex = fbm(vec2(x * 1.6 + float(i) * 13.1, s * 0.85));
+    foam += band * (0.22 + 0.78 * smoothstep(0.35, 0.75, tex));
+  }
+  float wz = -z;
+  if (wz > -0.2 && wz < 7.0) {
+    float half_ = 0.28 + wz * 0.24;
+    float wband = smoothstep(half_, half_ * 0.3, abs(x - uPlayerX));
+    float wtex = fbm(vec2(x * 2.2, s * 1.4));
+    foam += wband * (0.4 + 0.6 * smoothstep(0.3, 0.72, wtex)) * smoothstep(7.0, 0.5, wz);
+  }
+  foam = clamp(foam, 0.0, 1.0);
+  col = mix(col, vec3(0.97, 0.99, 1.0), foam * 0.85);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ---------- sky shader ----------
+
+const SKY_VS = /* glsl */ `
+varying vec3 vPos;
+void main() {
+  vPos = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const SKY_FS = /* glsl */ `
+varying vec3 vPos;
+void main() {
+  float h = normalize(vPos).y;
+  vec3 top = vec3(0.15, 0.55, 0.92);
+  vec3 hor = vec3(0.80, 0.94, 1.0);
+  vec3 col = mix(hor, top, smoothstep(-0.02, 0.4, h));
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ---------- scenery / obstacle meshes ----------
+
+function Palm({ seed }: { seed: number }) {
+  const lean = (seed - 0.5) * 0.5;
+  const h = 2.2 + seed * 1.2;
+  const leaves = useMemo(() => {
+    const arr: { rot: number; tilt: number }[] = [];
+    for (let i = 0; i < 6; i++)
+      arr.push({ rot: (i / 6) * Math.PI * 2 + seed * 7, tilt: 0.9 + (i % 3) * 0.12 });
+    return arr;
+  }, [seed]);
+  return (
+    <group rotation={[0, 0, lean]}>
+      <mesh position={[0, h / 2, 0]}>
+        <cylinderGeometry args={[0.09, 0.16, h, 6]} />
+        <meshStandardMaterial color="#8a5a33" roughness={0.9} />
+      </mesh>
+      {leaves.map((l, i) => (
+        <group key={i} position={[0, h, 0]} rotation={[0, l.rot, 0]}>
+          <mesh position={[0.62, 0.08, 0]} rotation={[0, 0, -l.tilt]} scale={[1, 0.22, 0.5]}>
+            <coneGeometry args={[0.5, 1.5, 5]} />
+            <meshStandardMaterial color="#2f9e44" roughness={0.8} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, h + 0.05, 0]}>
+        <sphereGeometry args={[0.14, 8, 6]} />
+        <meshStandardMaterial color="#5c8a1e" roughness={0.8} />
+      </mesh>
+    </group>
+  );
+}
+
+function Island({ seed }: { seed: number }) {
+  return (
+    <group>
+      <mesh position={[0, -0.55, 0]} scale={[2.6 + seed * 2, 0.9, 2.2]}>
+        <sphereGeometry args={[1, 16, 12]} />
+        <meshStandardMaterial color="#e9d8a6" roughness={1} />
+      </mesh>
+      <mesh position={[0.4, -0.15, -0.3]} scale={[1.5, 0.8, 1.3]}>
+        <sphereGeometry args={[1, 12, 10]} />
+        <meshStandardMaterial color="#2d9d4f" roughness={0.9} />
+      </mesh>
+      <group position={[-0.6, 0.1, 0.3]} scale={0.8}>
+        <Palm seed={seed} />
+      </group>
+      <group position={[0.9, 0.2, 0.5]} scale={0.65}>
+        <Palm seed={1 - seed} />
+      </group>
+    </group>
+  );
+}
+
+function FoamRing({ r }: { r: number }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
+      <ringGeometry args={[r * 0.82, r, 24]} />
+      <meshBasicMaterial color="#ffffff" transparent opacity={0.5} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function Rock({ seed }: { seed: number }) {
+  const geo = useMemo(() => {
+    const g = new THREE.IcosahedronGeometry(0.85, 1);
+    const pos = g.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const k = 1 + Math.sin(seed * 1000 + i * 37.7) * 0.18;
+      pos.setXYZ(
+        i,
+        pos.getX(i) * k,
+        pos.getY(i) * (0.75 + 0.2 * Math.sin(i * 3 + seed * 20)),
+        pos.getZ(i) * k
+      );
+    }
+    g.computeVertexNormals();
+    return g;
+  }, [seed]);
+  return (
+    <group>
+      <mesh geometry={geo} position={[0, 0.05, 0]} rotation={[0, seed * 6, 0]}>
+        <meshStandardMaterial color="#48535e" roughness={0.95} flatShading />
+      </mesh>
+      <mesh geometry={geo} position={[0.55, -0.15, 0.3]} scale={0.5} rotation={[0, seed * 9, 0]}>
+        <meshStandardMaterial color="#3d4750" roughness={0.95} flatShading />
+      </mesh>
+      <FoamRing r={1.15} />
+    </group>
+  );
+}
+
+function Crate() {
+  const tex = useMemo(() => woodTexture(), []);
+  return (
+    <group>
+      <mesh position={[0, 0.42, 0]} rotation={[0, 0.4, 0]}>
+        <boxGeometry args={[1.15, 1.15, 1.15]} />
+        <meshStandardMaterial map={tex} roughness={0.85} />
+      </mesh>
+      <FoamRing r={1.05} />
+    </group>
+  );
+}
+
+function Log() {
+  return (
+    <group>
+      <mesh position={[0, 0.14, 0]} rotation={[0, 0.15, Math.PI / 2]}>
+        <cylinderGeometry args={[0.26, 0.3, 2.3, 10]} />
+        <meshStandardMaterial color="#7d4f2a" roughness={0.95} />
+      </mesh>
+      <FoamRing r={1.0} />
+    </group>
+  );
+}
+
+function Buoy() {
+  return (
+    <group>
+      <mesh position={[0, 0.32, 0]}>
+        <sphereGeometry args={[0.5, 20, 16]} />
+        <meshStandardMaterial color="#e63946" roughness={0.35} />
+      </mesh>
+      <mesh position={[0, 0.34, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.49, 0.09, 10, 24]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.85, 0]}>
+        <cylinderGeometry args={[0.05, 0.07, 0.35, 8]} />
+        <meshStandardMaterial color="#c1121f" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 1.05, 0]}>
+        <sphereGeometry args={[0.09, 10, 8]} />
+        <meshStandardMaterial color="#ffd60a" emissive="#ffb703" emissiveIntensity={0.6} />
+      </mesh>
+      <FoamRing r={0.75} />
+    </group>
+  );
+}
+
+function SharkFin() {
+  const geo = useMemo(() => {
+    const s = new THREE.Shape();
+    s.moveTo(-0.45, 0);
+    s.quadraticCurveTo(-0.2, 0.55, 0.02, 0.95);
+    s.quadraticCurveTo(0.28, 0.55, 0.5, 0.05);
+    s.closePath();
+    return new THREE.ExtrudeGeometry(s, {
+      depth: 0.14, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 2,
+    });
+  }, []);
+  return (
+    <group>
+      <mesh geometry={geo} position={[0, 0, -0.07]}>
+        <meshStandardMaterial color="#4f6272" roughness={0.5} />
+      </mesh>
+      <FoamRing r={0.7} />
+    </group>
+  );
+}
+
+function Jelly() {
+  return (
+    <group>
+      <mesh position={[0, 0.55, 0]}>
+        <sphereGeometry args={[0.42, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial
+          color="#ff9fce" transparent opacity={0.8}
+          emissive="#ff6bb3" emissiveIntensity={0.45} roughness={0.3}
+        />
+      </mesh>
+      {[-0.2, -0.05, 0.1, 0.25].map((x, i) => (
+        <mesh key={i} position={[x, 0.28, 0.05 * (i % 2 ? 1 : -1)]}>
+          <cylinderGeometry args={[0.02, 0.015, 0.5, 5]} />
+          <meshStandardMaterial color="#ffb3da" transparent opacity={0.7} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function BlobShadow({ r }: { r: number }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+      <circleGeometry args={[r, 20]} />
+      <meshBasicMaterial color="#03304f" transparent opacity={0.22} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function ItemSprite({ kind }: { kind: Kind }) {
+  const isPower = POWERUPS.includes(kind);
+  const tex = useMemo(
+    () => itemTexture(kind, EMOJI_SPRITE[kind] || "❓", isPower),
+    [kind, isPower]
+  );
+  return (
+    <>
+      <sprite position={[0, isPower ? 1.0 : 0.7, 0]} scale={isPower ? [1.7, 1.7, 1] : [1.15, 1.15, 1]}>
+        <spriteMaterial map={tex} transparent depthWrite={false} />
+      </sprite>
+      <BlobShadow r={isPower ? 0.5 : 0.35} />
+    </>
+  );
+}
+
+function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) => void }) {
+  let body: React.ReactNode;
+  switch (o.kind) {
+    case "rock": body = <Rock seed={o.seed} />; break;
+    case "crate": body = <Crate />; break;
+    case "wood": body = <Log />; break;
+    case "buoy": body = <Buoy />; break;
+    case "fin": body = <SharkFin />; break;
+    case "jelly": body = <Jelly />; break;
+    case "palm": body = <Palm seed={o.seed} />; break;
+    case "island": body = <Island seed={o.seed} />; break;
+    default: body = <ItemSprite kind={o.kind} />;
+  }
+  return <group ref={(g) => reg(o.id, g)}>{body}</group>;
+}
+
+// ---------- surfer ----------
+
+const SKIN = "#d99a62";
+const SKIN_DARK = "#c4854a";
+
+function Surfer({ groupRef, boardRef, bodyRef }: {
+  groupRef: React.RefObject<THREE.Group | null>;
+  boardRef: React.RefObject<THREE.Group | null>;
+  bodyRef: React.RefObject<THREE.Group | null>;
+}) {
+  const boardGeo = useMemo(() => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -0.85);
+    s.bezierCurveTo(0.14, -0.7, 0.21, -0.2, 0.2, 0.15);
+    s.bezierCurveTo(0.19, 0.5, 0.12, 0.72, 0, 0.72);
+    s.bezierCurveTo(-0.12, 0.72, -0.19, 0.5, -0.2, 0.15);
+    s.bezierCurveTo(-0.21, -0.2, -0.14, -0.7, 0, -0.85);
+    const g = new THREE.ExtrudeGeometry(s, {
+      depth: 0.07, bevelEnabled: true, bevelSize: 0.025, bevelThickness: 0.02, bevelSegments: 2,
+    });
+    g.rotateX(Math.PI / 2);
+    return g;
+  }, []);
+  const stripeGeo = useMemo(() => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -0.78);
+    s.bezierCurveTo(0.05, -0.6, 0.065, -0.2, 0.06, 0.15);
+    s.bezierCurveTo(0.055, 0.45, 0.03, 0.62, 0, 0.62);
+    s.bezierCurveTo(-0.03, 0.62, -0.055, 0.45, -0.06, 0.15);
+    s.bezierCurveTo(-0.065, -0.2, -0.05, -0.6, 0, -0.78);
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.012, bevelEnabled: false });
+    g.rotateX(Math.PI / 2);
+    return g;
+  }, []);
+
+  return (
+    <group ref={groupRef}>
+      <BlobShadow r={0.55} />
+      <group ref={boardRef}>
+        <mesh geometry={boardGeo} position={[0, 0.12, 0]}>
+          <meshStandardMaterial color="#f7efdc" roughness={0.35} />
+        </mesh>
+        <mesh geometry={stripeGeo} position={[0, 0.155, 0]}>
+          <meshStandardMaterial color="#f28a1e" roughness={0.4} />
+        </mesh>
+        <group ref={bodyRef} position={[0, 0.16, 0.1]}>
+          {/* legs */}
+          <mesh position={[-0.1, 0.18, 0.02]} rotation={[0.18, 0, 0.08]}>
+            <capsuleGeometry args={[0.05, 0.26, 4, 8]} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+          </mesh>
+          <mesh position={[0.1, 0.18, -0.05]} rotation={[-0.15, 0, -0.08]}>
+            <capsuleGeometry args={[0.05, 0.26, 4, 8]} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+          </mesh>
+          {/* feet */}
+          <mesh position={[-0.11, 0.02, 0.06]} scale={[1, 0.5, 1.7]}>
+            <sphereGeometry args={[0.055, 8, 6]} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+          </mesh>
+          <mesh position={[0.11, 0.02, -0.08]} scale={[1, 0.5, 1.7]}>
+            <sphereGeometry args={[0.055, 8, 6]} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+          </mesh>
+          {/* board shorts */}
+          <mesh position={[0, 0.38, -0.01]}>
+            <boxGeometry args={[0.26, 0.16, 0.17]} />
+            <meshStandardMaterial color="#f2762e" roughness={0.7} />
+          </mesh>
+          <mesh position={[-0.075, 0.3, -0.01]}>
+            <cylinderGeometry args={[0.062, 0.068, 0.1, 8]} />
+            <meshStandardMaterial color="#e05f1f" roughness={0.7} />
+          </mesh>
+          <mesh position={[0.075, 0.3, -0.01]}>
+            <cylinderGeometry args={[0.062, 0.068, 0.1, 8]} />
+            <meshStandardMaterial color="#e05f1f" roughness={0.7} />
+          </mesh>
+          {/* torso */}
+          <mesh position={[0, 0.6, 0]}>
+            <capsuleGeometry args={[0.115, 0.24, 4, 12]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          {/* arms: spread nearly horizontal for balance */}
+          <mesh position={[-0.23, 0.7, 0]} rotation={[0, 0, 1.35]}>
+            <capsuleGeometry args={[0.04, 0.2, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          <mesh position={[0.23, 0.7, 0]} rotation={[0, 0, -1.35]}>
+            <capsuleGeometry args={[0.04, 0.2, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          <mesh position={[-0.41, 0.73, 0]} rotation={[0, 0, 1.1]}>
+            <capsuleGeometry args={[0.035, 0.16, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          <mesh position={[0.41, 0.73, 0]} rotation={[0, 0, -1.1]}>
+            <capsuleGeometry args={[0.035, 0.16, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          <mesh position={[-0.5, 0.76, 0]}>
+            <sphereGeometry args={[0.05, 8, 6]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          <mesh position={[0.5, 0.76, 0]}>
+            <sphereGeometry args={[0.05, 8, 6]} />
+            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          </mesh>
+          {/* head + hair */}
+          <mesh position={[0, 0.86, 0]}>
+            <sphereGeometry args={[0.105, 16, 12]} />
+            <meshStandardMaterial color={SKIN} roughness={0.6} />
+          </mesh>
+          <mesh position={[0, 0.895, -0.01]} scale={[1.06, 0.82, 1.06]}>
+            <sphereGeometry args={[0.105, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
+            <meshStandardMaterial color="#5f3d1f" roughness={0.8} />
+          </mesh>
+          {([[-0.03, 0.985, 0.02, 0.3], [0.02, 1.0, -0.01, -0.2], [0.06, 0.975, 0.01, 0.5]] as const).map(
+            ([x, y, z, r], i) => (
+              <mesh key={i} position={[x, y, z]} rotation={[0, 0, r]}>
+                <coneGeometry args={[0.028, 0.07, 5]} />
+                <meshStandardMaterial color="#6b4423" roughness={0.8} />
+              </mesh>
+            )
+          )}
+        </group>
+      </group>
+    </group>
+  );
+}
+
+// ---------- spray particles ----------
+
+const SPRAY_N = 90;
+
+function Spray({ dataRef }: { dataRef: React.RefObject<Float32Array> }) {
+  const geoRef = useRef<THREE.BufferGeometry>(null);
+  const tex = useMemo(() => softCircleTexture(), []);
+  const positions = useMemo(() => new Float32Array(SPRAY_N * 3).fill(-100), []);
+  useFrame(() => {
+    if (!geoRef.current || !dataRef.current) return;
+    const d = dataRef.current;
+    for (let i = 0; i < SPRAY_N; i++) {
+      positions[i * 3] = d[i * 6];
+      positions[i * 3 + 1] = d[i * 6 + 1];
+      positions[i * 3 + 2] = d[i * 6 + 2];
+    }
+    const attr = geoRef.current.attributes.position as THREE.BufferAttribute;
+    if (attr) attr.needsUpdate = true;
+  });
+  return (
+    <points frustumCulled={false}>
+      <bufferGeometry ref={geoRef}>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        map={tex} size={0.22} transparent opacity={0.85}
+        depthWrite={false} sizeAttenuation color="#ffffff"
+      />
+    </points>
+  );
+}
+
+// ---------- clouds ----------
+
+function Clouds() {
+  const tex = useMemo(() => softCircleTexture(), []);
+  const clouds: [number, number, number, number][] = [
+    [-14, 9, -70, 9], [10, 12, -80, 12], [3, 8, -60, 6], [-6, 11, -85, 8],
+  ];
+  return (
+    <>
+      {clouds.map(([x, y, z, s], i) => (
+        <sprite key={i} position={[x, y, z]} scale={[s, s * 0.38, 1]}>
+          <spriteMaterial map={tex} transparent opacity={0.9} color="#ffffff" depthWrite={false} />
+        </sprite>
+      ))}
+    </>
+  );
+}
+
+// ---------- scene ----------
+
+function Scene({ stRef, bestRef, onHud }: {
+  stRef: React.RefObject<GS>;
+  bestRef: React.RefObject<{ v: number }>;
+  onHud: (h: Hud) => void;
+}) {
+  const { camera } = useThree();
+  const [, setV] = useState(0);
+  const lastRev = useRef(-1);
+  const refs = useRef(new Map<number, THREE.Group>());
+  const playerRef = useRef<THREE.Group>(null);
+  const boardRef = useRef<THREE.Group>(null);
+  const bodyRef = useRef<THREE.Group>(null);
+  const shieldRef = useRef<THREE.Mesh>(null);
+  const waterMat = useRef<THREE.ShaderMaterial>(null);
+  const hudJson = useRef("");
+  const spray = useRef(new Float32Array(SPRAY_N * 6).fill(-100));
+  const sprayIdx = useRef(0);
+  const ringRefs = useRef<(THREE.Sprite | null)[]>([]);
+  const ringTex = useMemo(() => ringTexture(), []);
+
+  const waterUniforms = useMemo(
+    () => ({ uTime: { value: 0 }, uScroll: { value: 0 }, uPlayerX: { value: 0 } }),
+    []
+  );
+
+  const reg = (id: number, g: THREE.Group | null) => {
+    if (g) refs.current.set(id, g);
+    else refs.current.delete(id);
+  };
+
+  useFrame((_, delta) => {
+    const dt = Math.min(0.05, delta);
+    const st = stRef.current;
+    const best = bestRef.current;
+    update(st, dt, best);
+
+    if (st.rev !== lastRev.current) {
+      lastRev.current = st.rev;
+      setV((v) => v + 1);
+    }
+
+    // objects
+    for (const o of st.objs) {
+      const g = refs.current.get(o.id);
+      if (!g) continue;
+      const x = o.lane * LANE_X;
+      let y = 0;
+      if (o.kind === "crate" || o.kind === "buoy")
+        y = Math.sin(st.time * 2.2 + o.bob) * 0.08;
+      if (o.kind === "jelly")
+        y = 0.15 + Math.sin(st.time * 3 + o.bob) * 0.14;
+      if (COLLECTIBLES.includes(o.kind) || POWERUPS.includes(o.kind))
+        y = Math.sin(st.time * 2.6 + o.bob) * 0.1;
+      g.position.set(x, y, -o.z);
+      if (o.kind === "fin") g.rotation.y = Math.sin(st.time * 1.5 + o.bob) * 0.3;
+    }
+
+    // player
+    const px = st.playerPos * LANE_X;
+    const tilt = st.playerLane - st.playerPos;
+    if (playerRef.current) {
+      playerRef.current.position.set(px, Math.sin(st.time * 3.1) * 0.05, 0);
+      playerRef.current.visible = !(st.invulnT > 0 && Math.floor(st.time * 10) % 2 === 0);
+    }
+    if (boardRef.current) {
+      boardRef.current.rotation.z = -tilt * 0.55;
+      boardRef.current.rotation.y = -tilt * 0.35;
+      boardRef.current.rotation.x = Math.sin(st.time * 2.2) * 0.045 - 0.02;
+    }
+    if (bodyRef.current) bodyRef.current.rotation.z = -tilt * 0.35;
+    if (shieldRef.current) {
+      shieldRef.current.visible = st.shield;
+      shieldRef.current.position.set(px, 0.55, 0);
+      shieldRef.current.scale.setScalar(1 + Math.sin(st.time * 5) * 0.04);
+    }
+
+    // spray
+    const alive = st.started && !st.over ? 1 : 0.25;
+    const d = spray.current;
+    for (let s = 0; s < 3; s++) {
+      const i = sprayIdx.current;
+      sprayIdx.current = (sprayIdx.current + 1) % SPRAY_N;
+      d[i * 6] = px + rnd(-0.25, 0.25);
+      d[i * 6 + 1] = 0.08;
+      d[i * 6 + 2] = rnd(0.5, 0.9);
+      d[i * 6 + 3] = rnd(-0.8, 0.8);
+      d[i * 6 + 4] = rnd(0.8, 2.6) * alive;
+      d[i * 6 + 5] = rnd(1.5, 4.5) * alive;
+    }
+    for (let i = 0; i < SPRAY_N; i++) {
+      d[i * 6] += d[i * 6 + 3] * dt;
+      d[i * 6 + 1] += d[i * 6 + 4] * dt;
+      d[i * 6 + 2] += d[i * 6 + 5] * dt;
+      d[i * 6 + 4] -= 6 * dt;
+      if (d[i * 6 + 1] < -0.3) d[i * 6 + 1] = -100;
+    }
+
+    // collect rings
+    for (let i = 0; i < 6; i++) {
+      const spr = ringRefs.current[i];
+      if (!spr) continue;
+      const r = st.rings[i];
+      if (r) {
+        spr.visible = true;
+        spr.position.set(r.x, 0.6 + r.t * 0.8, -r.z);
+        const sc = 0.5 + r.t * 2.2;
+        spr.scale.set(sc, sc, 1);
+        (spr.material as THREE.SpriteMaterial).opacity = 1 - r.t;
+        (spr.material as THREE.SpriteMaterial).color.set(r.color);
+      } else {
+        spr.visible = false;
+      }
+    }
+
+    // water + camera
+    if (waterMat.current) {
+      waterMat.current.uniforms.uTime.value = st.time;
+      waterMat.current.uniforms.uScroll.value = st.dist;
+      waterMat.current.uniforms.uPlayerX.value = px;
+    }
+    camera.position.set(px * 0.45, 3.4, 6.2);
+    camera.lookAt(px * 0.6, 0.25, -14);
+
+    // HUD
+    const next: Hud = {
+      score: st.score,
+      best: best.v,
+      level: st.level,
+      turbo: Math.ceil(st.turboT),
+      magnet: Math.ceil(st.magnetT),
+      slow: Math.ceil(st.slowT),
+      shield: st.shield,
+      over: st.over,
+      newBest: st.over && st.score > 0 && st.score >= best.v,
+    };
+    const json = JSON.stringify(next);
+    if (json !== hudJson.current) {
+      hudJson.current = json;
+      onHud(next);
+    }
+  });
+
+  const st = stRef.current;
+
+  return (
+    <>
+      <fog attach="fog" args={["#c9ecfa", 40, 95]} />
+      <ambientLight intensity={0.85} />
+      <hemisphereLight args={["#bfe9ff", "#1f97e0", 0.5]} />
+      <directionalLight position={[6, 12, 5]} intensity={1.6} color="#fff6e0" />
+
+      {/* sky dome */}
+      <mesh>
+        <sphereGeometry args={[180, 24, 16]} />
+        <shaderMaterial vertexShader={SKY_VS} fragmentShader={SKY_FS} side={THREE.BackSide} depthWrite={false} />
+      </mesh>
+
+      <Clouds />
+
+      {/* water */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -49]}>
+        <planeGeometry args={[36, 130, 48, 160]} />
+        <shaderMaterial
+          ref={waterMat}
+          vertexShader={WATER_VS}
+          fragmentShader={WATER_FS}
+          uniforms={waterUniforms}
+        />
+      </mesh>
+
+      {/* far islands */}
+      <group position={[-13, 0, -72]} scale={2.2}><Island seed={0.3} /></group>
+      <group position={[14, 0, -78]} scale={2.6}><Island seed={0.7} /></group>
+
+      {/* world objects */}
+      {st.objs.map((o) => (
+        <ObjView key={o.id} o={o} reg={reg} />
+      ))}
+
+      {/* player */}
+      <Surfer groupRef={playerRef} boardRef={boardRef} bodyRef={bodyRef} />
+      <mesh ref={shieldRef} visible={false}>
+        <sphereGeometry args={[0.95, 20, 14]} />
+        <meshStandardMaterial
+          color="#21c8ff" transparent opacity={0.18}
+          emissive="#21c8ff" emissiveIntensity={0.5} depthWrite={false}
+        />
+      </mesh>
+
+      <Spray dataRef={spray} />
+
+      {/* collect ring pool */}
+      {Array.from({ length: 6 }).map((_, i) => (
+        <sprite key={i} ref={(s) => { ringRefs.current[i] = s; }} visible={false}>
+          <spriteMaterial map={ringTex} transparent depthWrite={false} />
+        </sprite>
+      ))}
+    </>
+  );
+}
+
+// ---------- main component ----------
 
 export default function SurfGame() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const stRef = useRef<GS>(initState());
-  const bestRef = useRef(0);
-  const hudJsonRef = useRef("");
+  const bestRef = useRef({ v: 0 });
   const [hud, setHud] = useState<Hud>({
-    score: 0,
-    best: 0,
-    level: 1,
-    turbo: 0,
-    magnet: 0,
-    slow: 0,
-    shield: false,
-    over: false,
-    newBest: false,
+    score: 0, best: 0, level: 1, turbo: 0, magnet: 0, slow: 0,
+    shield: false, over: false, newBest: false,
   });
   const [showHint, setShowHint] = useState(true);
+
+  useEffect(() => {
+    bestRef.current.v = Number(localStorage.getItem(BEST_KEY) || 0);
+  }, []);
 
   const restart = () => {
     stRef.current = initState();
     setShowHint(true);
   };
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    bestRef.current = Number(localStorage.getItem(BEST_KEY) || 0);
-
-    let W = 0;
-    let H = 0;
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      W = window.innerWidth;
-      H = window.innerHeight;
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    // ---------- input ----------
-    const move = (dir: -1 | 1) => {
-      const st = stRef.current;
-      if (st.over) return;
-      if (!st.started) {
-        st.started = true; // first input starts the run
-        setShowHint(false);
-        return;
-      }
-      st.playerLane = Math.max(-1, Math.min(1, st.playerLane + dir));
+  const move = (dir: -1 | 1) => {
+    const st = stRef.current;
+    if (st.over) return;
+    if (!st.started) {
+      st.started = true;
       setShowHint(false);
-    };
+      return;
+    }
+    st.playerLane = Math.max(-1, Math.min(1, st.playerLane + dir));
+    setShowHint(false);
+  };
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft" || e.key === "a") move(-1);
       else if (e.key === "ArrowRight" || e.key === "d") move(1);
     };
-    let px0 = 0;
-    let pDown = false;
-    const onPD = (e: PointerEvent) => {
-      px0 = e.clientX;
-      pDown = true;
-    };
-    const onPU = (e: PointerEvent) => {
-      if (!pDown) return;
-      pDown = false;
-      const dx = e.clientX - px0;
-      if (Math.abs(dx) > 24) move(dx > 0 ? 1 : -1);
-      else move(e.clientX > W / 2 ? 1 : -1); // tap side fallback
-    };
     window.addEventListener("keydown", onKey);
-    canvas.addEventListener("pointerdown", onPD);
-    canvas.addEventListener("pointerup", onPU);
-
-    // ---------- projection helpers ----------
-    const horizonY = () => H * 0.27;
-    const playerY = () => H * 0.76;
-    const laneHalf = () => Math.min(W * 0.38, 210);
-    const projY = (z: number) => horizonY() + (playerY() - horizonY()) / z;
-    const projX = (lane: number, z: number) =>
-      W / 2 + (lane * laneHalf()) / z;
-    const objSize = () => Math.min(W * 0.24, 104);
-
-    // ---------- spawning ----------
-    const spawnRow = (st: GS) => {
-      const r = Math.random();
-      if (r < 0.55) {
-        // obstacle row: block 1-2 lanes, always leave one free
-        const lanes = [-1, 0, 1].sort(() => Math.random() - 0.5);
-        const count = st.level >= 3 && Math.random() < 0.55 ? 2 : 1;
-        for (let i = 0; i < count; i++) {
-          st.objs.push({
-            kind: pick(OBSTACLES),
-            lane: lanes[i],
-            z: SPAWN_Z,
-            bob: rnd(0, Math.PI * 2),
-          });
-        }
-        // sometimes a collectible on a free lane
-        if (Math.random() < 0.45) {
-          st.objs.push({
-            kind: pick(COLLECTIBLES),
-            lane: lanes[2],
-            z: SPAWN_Z + rnd(0, 1.5),
-            bob: rnd(0, Math.PI * 2),
-          });
-        }
-      } else if (r < 0.88) {
-        // collectible run along one lane
-        const lane = pick([-1, 0, 1]);
-        const n = 3 + Math.floor(Math.random() * 3);
-        for (let i = 0; i < n; i++) {
-          st.objs.push({
-            kind: pick(COLLECTIBLES),
-            lane,
-            z: SPAWN_Z + i * 1.3,
-            bob: rnd(0, Math.PI * 2),
-          });
-        }
-      } else {
-        st.objs.push({
-          kind: pick(POWERUPS),
-          lane: pick([-1, 0, 1]),
-          z: SPAWN_Z,
-          bob: rnd(0, Math.PI * 2),
-        });
-      }
-    };
-
-    const burst = (st: GS, x: number, y: number, color: string, text?: string) => {
-      for (let i = 0; i < 8; i++) {
-        st.parts.push({
-          x,
-          y,
-          vx: rnd(-90, 90),
-          vy: rnd(-160, -30),
-          life: 0.6,
-          max: 0.6,
-          color,
-          size: rnd(3, 6),
-        });
-      }
-      if (text) {
-        st.parts.push({
-          x,
-          y: y - 20,
-          vx: 0,
-          vy: -70,
-          life: 0.8,
-          max: 0.8,
-          color: "#ffffff",
-          size: 22,
-          text,
-        });
-      }
-    };
-
-    // ---------- update ----------
-    const update = (st: GS, dt: number) => {
-      if (st.over) {
-        st.parts.forEach((p) => {
-          p.x += p.vx * dt;
-          p.y += p.vy * dt;
-          p.life -= dt;
-        });
-        st.parts = st.parts.filter((p) => p.life > 0);
-        return;
-      }
-      if (!st.started) {
-        // idle on the start screen: water animates, nothing spawns or moves
-        st.time += dt;
-        return;
-      }
-      st.time += dt;
-      st.level = Math.min(15, 1 + Math.floor(st.time / 18));
-
-      let speed = 5.5 + st.level * 0.45;
-      if (st.turboT > 0) speed *= 1.55;
-      if (st.slowT > 0) speed *= 0.55;
-
-      st.turboT = Math.max(0, st.turboT - dt);
-      st.magnetT = Math.max(0, st.magnetT - dt);
-      st.slowT = Math.max(0, st.slowT - dt);
-      st.invulnT = Math.max(0, st.invulnT - dt);
-
-      const dz = speed * dt;
-      st.dist += dz;
-      st.rowDist += dz;
-      st.decoDist += dz;
-
-      if (st.rowDist >= ROW_GAP) {
-        st.rowDist = 0;
-        spawnRow(st);
-      }
-      if (st.decoDist >= DECO_GAP) {
-        st.decoDist = 0;
-        st.decos.push({
-          side: Math.random() < 0.5 ? -1 : 1,
-          z: SPAWN_Z,
-          emoji: Math.random() < 0.85 ? "🌴" : "🏝️",
-        });
-      }
-
-      // player lane lerp
-      const k = Math.min(1, dt * 9);
-      st.playerPos += (st.playerLane - st.playerPos) * k;
-
-      // decos
-      st.decos.forEach((d) => (d.z -= dz));
-      st.decos = st.decos.filter((d) => d.z > 0.35);
-
-      // objects
-      const mult = st.turboT > 0 ? 2 : 1;
-      for (const o of st.objs) {
-        o.z -= dz;
-        // magnet pull on collectibles
-        if (
-          st.magnetT > 0 &&
-          COLLECTIBLES.includes(o.kind) &&
-          o.z < 7 &&
-          o.z > 0.8
-        ) {
-          o.lane += (st.playerPos - o.lane) * Math.min(1, dt * 6);
-          o.z -= dz * 0.6;
-        }
-      }
-
-      const keep: Obj[] = [];
-      for (const o of st.objs) {
-        let alive = o.z > 0.5;
-        if (alive && o.z < 1.28 && o.z > 0.78 && Math.abs(o.lane - st.playerPos) < 0.45) {
-          const x = projX(st.playerPos, 1);
-          const y = playerY();
-          if (COLLECTIBLES.includes(o.kind)) {
-            const v = (VALUE[o.kind] || 1) * mult;
-            st.score += v;
-            burst(st, x, y - 40, "#ffe066", `+${v}`);
-            alive = false;
-          } else if (POWERUPS.includes(o.kind)) {
-            if (o.kind === "turbo") st.turboT = 6;
-            else if (o.kind === "magnet") st.magnetT = 7;
-            else if (o.kind === "shield") st.shield = true;
-            else if (o.kind === "slow") st.slowT = 5;
-            burst(st, x, y - 40, "#7ce0ff", EMOJI[o.kind]);
-            alive = false;
-          } else if (st.invulnT <= 0) {
-            // obstacle
-            if (st.shield) {
-              st.shield = false;
-              st.invulnT = 1.5;
-              burst(st, x, y - 40, "#21c8ff", "🛡️");
-              alive = false;
-            } else {
-              st.over = true;
-              burst(st, x, y - 40, "#ffffff");
-              if (st.score > bestRef.current) {
-                bestRef.current = st.score;
-                localStorage.setItem(BEST_KEY, String(st.score));
-              }
-            }
-          }
-        }
-        if (alive) keep.push(o);
-      }
-      st.objs = keep;
-
-      // particles
-      st.parts.forEach((p) => {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.vy += 220 * dt;
-        p.life -= dt;
-      });
-      st.parts = st.parts.filter((p) => p.life > 0);
-    };
-
-    // ---------- drawing ----------
-    const drawPalm = (x: number, y: number, s: number, flip = 1) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(flip, 1);
-      ctx.rotate(-0.18);
-      ctx.strokeStyle = "#806337";
-      ctx.lineWidth = Math.max(2, s * 0.08);
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(s * 0.12, -s * 0.45, s * 0.02, -s * 0.9);
-      ctx.stroke();
-      ctx.translate(s * 0.02, -s * 0.92);
-      ctx.fillStyle = "#3eaa51";
-      for (let i = 0; i < 7; i++) {
-        const a = -2.55 + i * 0.82;
-        ctx.save();
-        ctx.rotate(a);
-        ctx.beginPath();
-        ctx.ellipse(s * 0.23, 0, s * 0.26, s * 0.07, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = "#2f8c42";
-      ctx.beginPath();
-      ctx.arc(0, 0, s * 0.08, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    };
-
-    const drawIsland = (x: number, baseY: number, w: number, side: -1 | 1) => {
-      const sand = ctx.createLinearGradient(0, baseY - 14, 0, baseY + 12);
-      sand.addColorStop(0, "#ffe8b0");
-      sand.addColorStop(1, "#e7bd72");
-      ctx.fillStyle = sand;
-      ctx.beginPath();
-      ctx.ellipse(x, baseY, w * 0.55, 15, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#65bd69";
-      ctx.beginPath();
-      ctx.ellipse(x + side * w * 0.03, baseY - 13, w * 0.35, 20, 0, Math.PI, 0);
-      ctx.fill();
-      ctx.fillStyle = "#707b87";
-      ctx.beginPath();
-      ctx.ellipse(x - side * w * 0.22, baseY - 3, w * 0.14, 12, -0.3, 0, Math.PI * 2);
-      ctx.ellipse(x + side * w * 0.22, baseY - 1, w * 0.11, 9, 0.2, 0, Math.PI * 2);
-      ctx.fill();
-      drawPalm(x + side * w * 0.16, baseY - 12, Math.min(68, w * 0.22), side);
-      drawPalm(x - side * w * 0.05, baseY - 9, Math.min(48, w * 0.16), -side);
-    };
-
-    const drawPowerBadge = (x: number, y: number, s: number, kind: Kind) => {
-      const colors: Record<string, [string, string]> = {
-        turbo: ["#fff35f", "#ff9f1c"],
-        magnet: ["#ff6a83", "#e71d36"],
-        shield: ["#7de7ff", "#1aa7ff"],
-        slow: ["#9bf6ff", "#00b4d8"],
-      };
-      const [a, b] = colors[kind] || colors.turbo;
-      const halo = ctx.createRadialGradient(x, y, 1, x, y, s * 0.72);
-      halo.addColorStop(0, `${a}ee`);
-      halo.addColorStop(1, `${b}00`);
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(x, y, s * 0.76, 0, Math.PI * 2);
-      ctx.fill();
-      const fill = ctx.createLinearGradient(x, y - s * 0.45, x, y + s * 0.45);
-      fill.addColorStop(0, a);
-      fill.addColorStop(1, b);
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.arc(x, y, s * 0.48, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = Math.max(2, s * 0.06);
-      ctx.strokeStyle = "rgba(255,255,255,0.94)";
-      ctx.stroke();
-      ctx.font = `900 ${s * 0.52}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "#18344b";
-      ctx.fillText(EMOJI[kind], x, y + s * 0.02);
-    };
-
-    const drawCollectible = (x: number, y: number, s: number, kind: Kind, t: number) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.sin(t * 3) * 0.1);
-      ctx.shadowColor = "rgba(118,240,255,0.7)";
-      ctx.shadowBlur = s * 0.22;
-      if (kind === "shell") {
-        const g = ctx.createLinearGradient(0, -s * 0.36, 0, s * 0.26);
-        g.addColorStop(0, "#ffd6ff");
-        g.addColorStop(0.6, "#b87aff");
-        g.addColorStop(1, "#7b4dff");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.moveTo(0, -s * 0.38);
-        for (let i = 0; i <= 6; i++) {
-          const a = Math.PI + (i / 6) * Math.PI;
-          ctx.lineTo(Math.cos(a) * s * 0.42, Math.sin(a) * s * 0.35 + s * 0.09);
-        }
-        ctx.quadraticCurveTo(0, s * 0.42, -s * 0.42, s * 0.09);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.78)";
-        ctx.lineWidth = s * 0.035;
-        for (let i = -2; i <= 2; i++) {
-          ctx.beginPath();
-          ctx.moveTo(0, s * 0.3);
-          ctx.lineTo(i * s * 0.12, -s * 0.22);
-          ctx.stroke();
-        }
-      } else if (kind === "star") {
-        ctx.fillStyle = "#ffe66d";
-        ctx.beginPath();
-        for (let i = 0; i < 10; i++) {
-          const r = i % 2 ? s * 0.2 : s * 0.48;
-          const a = -Math.PI / 2 + i * (Math.PI / 5);
-          ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "#fff6b3";
-        ctx.lineWidth = s * 0.04;
-        ctx.stroke();
-      } else {
-        const orange = kind === "fish2";
-        ctx.fillStyle = orange ? "#ff8f1f" : "#23b7df";
-        ctx.beginPath();
-        ctx.ellipse(0, 0, s * 0.42, s * 0.22, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.38, 0);
-        ctx.lineTo(-s * 0.62, -s * 0.2);
-        ctx.lineTo(-s * 0.58, s * 0.2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = "#ffffff";
-        ctx.beginPath();
-        ctx.arc(s * 0.22, -s * 0.05, s * 0.055, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    };
-
-    const drawObstacle = (x: number, y: number, s: number, kind: Kind) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.shadowColor = "rgba(0,40,70,0.38)";
-      ctx.shadowBlur = s * 0.12;
-      ctx.shadowOffsetY = s * 0.08;
-      if (kind === "crate" || kind === "wood") {
-        if (kind === "crate") {
-          const g = ctx.createLinearGradient(0, -s * 0.45, 0, s * 0.35);
-          g.addColorStop(0, "#b8793c");
-          g.addColorStop(1, "#6b3e1d");
-          ctx.fillStyle = g;
-          ctx.fillRect(-s * 0.38, -s * 0.45, s * 0.76, s * 0.72);
-          ctx.strokeStyle = "#3d2412";
-          ctx.lineWidth = s * 0.055;
-          ctx.strokeRect(-s * 0.38, -s * 0.45, s * 0.76, s * 0.72);
-          ctx.beginPath();
-          ctx.moveTo(-s * 0.34, -s * 0.4);
-          ctx.lineTo(s * 0.34, s * 0.24);
-          ctx.moveTo(s * 0.34, -s * 0.4);
-          ctx.lineTo(-s * 0.34, s * 0.24);
-          ctx.stroke();
-        } else {
-          ctx.rotate(-0.18);
-          ctx.fillStyle = "#8b5a2b";
-          ctx.beginPath();
-          ctx.roundRect(-s * 0.48, -s * 0.14, s * 0.96, s * 0.28, s * 0.14);
-          ctx.fill();
-          ctx.strokeStyle = "#583612";
-          ctx.lineWidth = s * 0.04;
-          ctx.stroke();
-        }
-      } else if (kind === "buoy") {
-        ctx.fillStyle = "#ff6b35";
-        ctx.beginPath();
-        ctx.moveTo(0, -s * 0.52);
-        ctx.lineTo(s * 0.32, s * 0.24);
-        ctx.lineTo(-s * 0.32, s * 0.24);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(-s * 0.24, -s * 0.08, s * 0.48, s * 0.13);
-      } else if (kind === "fin") {
-        ctx.fillStyle = "#2f4454";
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.24, s * 0.16);
-        ctx.quadraticCurveTo(s * 0.08, -s * 0.56, s * 0.34, s * 0.16);
-        ctx.closePath();
-        ctx.fill();
-      } else if (kind === "jelly") {
-        ctx.fillStyle = "rgba(182,118,255,0.82)";
-        ctx.beginPath();
-        ctx.arc(0, -s * 0.12, s * 0.34, Math.PI, 0);
-        ctx.lineTo(s * 0.34, s * 0.1);
-        ctx.quadraticCurveTo(0, s * 0.28, -s * 0.34, s * 0.1);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.72)";
-        ctx.lineWidth = s * 0.035;
-        for (let i = -1; i <= 1; i++) {
-          ctx.beginPath();
-          ctx.moveTo(i * s * 0.14, s * 0.08);
-          ctx.quadraticCurveTo(i * s * 0.18, s * 0.35, i * s * 0.04, s * 0.5);
-          ctx.stroke();
-        }
-      } else {
-        const g = ctx.createLinearGradient(0, -s * 0.45, 0, s * 0.36);
-        g.addColorStop(0, "#6f8191");
-        g.addColorStop(1, "#293b48");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.42, s * 0.2);
-        ctx.lineTo(-s * 0.22, -s * 0.35);
-        ctx.lineTo(s * 0.18, -s * 0.48);
-        ctx.lineTo(s * 0.46, s * 0.08);
-        ctx.quadraticCurveTo(s * 0.14, s * 0.36, -s * 0.42, s * 0.2);
-        ctx.fill();
-      }
-      ctx.restore();
-    };
-
-    const drawScene = (st: GS) => {
-      const hz = horizonY();
-      const py = playerY();
-
-      // sky
-      const sky = ctx.createLinearGradient(0, 0, 0, hz);
-      sky.addColorStop(0, "#1297e5");
-      sky.addColorStop(0.55, "#54c4f4");
-      sky.addColorStop(1, "#c9f3ff");
-      ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, W, hz + 2);
-
-      const sun = ctx.createRadialGradient(W * 0.62, hz * 0.12, 4, W * 0.62, hz * 0.12, W * 0.5);
-      sun.addColorStop(0, "rgba(255,255,255,0.7)");
-      sun.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = sun;
-      ctx.fillRect(0, 0, W, hz);
-
-      // clouds
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      for (const [cx, cy, s] of [
-        [W * 0.2, hz * 0.35, 26],
-        [W * 0.75, hz * 0.5, 32],
-        [W * 0.5, hz * 0.22, 20],
-      ] as const) {
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, s * 1.6, s * 0.6, 0, 0, Math.PI * 2);
-        ctx.ellipse(cx + s, cy - s * 0.3, s, s * 0.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // sea
-      const sea = ctx.createLinearGradient(0, hz, 0, H);
-      sea.addColorStop(0, "#74ddf1");
-      sea.addColorStop(0.38, "#10aee4");
-      sea.addColorStop(0.72, "#0787cf");
-      sea.addColorStop(1, "#0069a7");
-      ctx.fillStyle = sea;
-      ctx.fillRect(0, hz, W, H - hz);
-
-      // tropical shores and distant islands
-      drawIsland(W * 0.08, hz + 16, W * 0.46, -1);
-      drawIsland(W * 0.95, hz + 15, W * 0.5, 1);
-      drawIsland(W * 0.5, hz + 5, W * 0.18, 1);
-
-      // glossy water ribbons
-      ctx.lineCap = "round";
-      for (let i = 0; i < 30; i++) {
-        const z = 1 + ((i * 0.88 + st.dist * 0.28) % 18);
-        const lane = ((i % 7) - 3) * 0.62;
-        const x = projX(lane, z);
-        const y = projY(z);
-        const len = Math.max(8, 78 / z);
-        ctx.strokeStyle = i % 3 === 0 ? "rgba(172,250,255,0.42)" : "rgba(255,255,255,0.24)";
-        ctx.lineWidth = Math.max(1, 4 / z);
-        ctx.beginPath();
-        ctx.moveTo(x - len * 0.45, y);
-        ctx.quadraticCurveTo(x, y - 4 / z, x + len * 0.55, y + 2 / z);
-        ctx.stroke();
-      }
-
-      // lane wake bands (foam trails)
-      for (const lane of [-1, 0, 1]) {
-        const half = 0.38;
-        const band = ctx.createLinearGradient(0, projY(SPAWN_Z), 0, projY(0.8));
-        band.addColorStop(0, "rgba(255,255,255,0.03)");
-        band.addColorStop(0.55, "rgba(255,255,255,0.12)");
-        band.addColorStop(1, "rgba(255,255,255,0.23)");
-        ctx.fillStyle = band;
-        ctx.beginPath();
-        ctx.moveTo(projX(lane - half, SPAWN_Z), projY(SPAWN_Z));
-        ctx.lineTo(projX(lane + half, SPAWN_Z), projY(SPAWN_Z));
-        ctx.lineTo(projX(lane + half, 0.8), projY(0.8));
-        ctx.lineTo(projX(lane - half, 0.8), projY(0.8));
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      // bright perspective lane rails
-      for (const edge of [-1.5, -0.5, 0.5, 1.5]) {
-        const rail = ctx.createLinearGradient(0, projY(SPAWN_Z), 0, H);
-        rail.addColorStop(0, "rgba(255,255,255,0.02)");
-        rail.addColorStop(0.55, "rgba(255,255,255,0.22)");
-        rail.addColorStop(1, "rgba(255,255,255,0.62)");
-        ctx.strokeStyle = rail;
-        ctx.lineWidth = Math.max(1.5, W * 0.008);
-        ctx.beginPath();
-        ctx.moveTo(projX(edge, SPAWN_Z), projY(SPAWN_Z));
-        ctx.lineTo(projX(edge, 0.75), projY(0.75));
-        ctx.stroke();
-      }
-
-      // animated foam streaks racing toward viewer
-      ctx.strokeStyle = "rgba(255,255,255,0.56)";
-      ctx.lineCap = "round";
-      const phase = st.dist % 1.8;
-      for (const lane of [-1, 0, 1]) {
-        for (let i = 0; i < 18; i++) {
-          const z = 1 + i * 1.65 - phase * 1.65 + 1.4;
-          if (z < 0.9 || z > SPAWN_Z) continue;
-          const off = (i % 2 === 0 ? -0.28 : 0.28) * (lane === 0 ? 1 : lane);
-          const x = projX(lane + off, z);
-          const y1 = projY(z);
-          const y2 = projY(Math.max(0.82, z - 0.72));
-          ctx.lineWidth = Math.max(1.2, 8 / z);
-          ctx.globalAlpha = Math.min(0.7, 2.1 / z);
-          ctx.beginPath();
-          ctx.moveTo(x, y1);
-          ctx.lineTo(projX(lane + off, Math.max(0.82, z - 0.72)), y2);
-          ctx.stroke();
-        }
-      }
-      ctx.globalAlpha = 1;
-
-      // world objects (decos + game objects), far to near
-      const size = objSize();
-      const drawables: { z: number; draw: () => void }[] = [];
-
-      for (const d of st.decos) {
-        drawables.push({
-          z: d.z,
-          draw: () => {
-            const s = Math.min(170, (size * 3.0) / d.z);
-            const x = projX(d.side * 2.55, d.z);
-            const y = projY(d.z);
-            ctx.globalAlpha = Math.min(1, 3 / d.z);
-            if (d.emoji === "🌴") drawPalm(x, y + s * 0.24, s, d.side);
-            else drawIsland(x, y + s * 0.08, s * 1.55, d.side);
-            ctx.globalAlpha = 1;
-          },
-        });
-      }
-
-      for (const o of st.objs) {
-        drawables.push({
-          z: o.z,
-          draw: () => {
-            const s = Math.min(size, Math.max(12, (size * 1.45) / o.z));
-            const x = projX(o.lane, o.z);
-            const bobY = Math.sin(st.time * 3 + o.bob) * s * 0.08;
-            const y = projY(o.z) + bobY;
-            ctx.fillStyle = "rgba(3,48,85,0.22)";
-            ctx.beginPath();
-            ctx.ellipse(x, y + s * 0.28, s * 0.42, s * 0.12, 0, 0, Math.PI * 2);
-            ctx.fill();
-            if (POWERUPS.includes(o.kind)) {
-              drawPowerBadge(x, y - s * 0.3, s, o.kind);
-            } else if (COLLECTIBLES.includes(o.kind)) {
-              drawCollectible(x, y - s * 0.24, s, o.kind, st.time + o.bob);
-            } else {
-              drawObstacle(x, y - s * 0.2, s, o.kind);
-            }
-          },
-        });
-      }
-
-      drawables.sort((a, b) => b.z - a.z);
-      drawables.forEach((d) => d.draw());
-
-      // ---------- player ----------
-      const px = projX(st.playerPos, 1);
-      const pyy = py + Math.sin(st.time * 4) * 3;
-      const tilt = (st.playerLane - st.playerPos) * 0.45;
-      const ps = Math.min(W * 0.3, 130); // board length
-
-      // long wake carving behind the rider
-      for (const side of [-1, 1]) {
-        const wake = ctx.createLinearGradient(px, pyy + ps * 0.12, px + side * ps * 1.2, H);
-        wake.addColorStop(0, "rgba(255,255,255,0.8)");
-        wake.addColorStop(0.55, "rgba(255,255,255,0.28)");
-        wake.addColorStop(1, "rgba(255,255,255,0)");
-        ctx.strokeStyle = wake;
-        ctx.lineWidth = ps * (st.turboT > 0 ? 0.08 : 0.055);
-        ctx.beginPath();
-        ctx.moveTo(px + side * ps * 0.12, pyy + ps * 0.2);
-        ctx.bezierCurveTo(
-          px + side * ps * 0.26,
-          pyy + ps * 0.65,
-          px + side * ps * 0.6,
-          pyy + ps * 1.25,
-          px + side * ps * 1.05,
-          H + ps * 0.25
-        );
-        ctx.stroke();
-      }
-
-      // spray + foam at the board tail
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      for (let i = 0; i < (st.turboT > 0 ? 30 : 18); i++) {
-        const a = rnd(-1.1, 1.1);
-        const r = rnd(2, ps * (st.turboT > 0 ? 0.55 : 0.38));
-        ctx.globalAlpha = rnd(0.25, 0.8);
-        ctx.beginPath();
-        ctx.arc(
-          px + Math.sin(a) * r * 1.9,
-          pyy + ps * 0.58 + Math.abs(Math.cos(a)) * r * 0.5,
-          rnd(2, 7),
-          0,
-          Math.PI * 2
-        );
-        ctx.fill();
-      }
-      // drifting side bubbles
-      for (let i = 0; i < 4; i++) {
-        const t = (st.time * 0.7 + i * 0.73) % 1;
-        ctx.globalAlpha = 0.35 * (1 - t);
-        ctx.beginPath();
-        ctx.arc(
-          px + (i % 2 === 0 ? -1 : 1) * ps * (0.55 + i * 0.09),
-          pyy + ps * (0.5 - t * 0.5),
-          ps * 0.035 * (1 + t),
-          0,
-          Math.PI * 2
-        );
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-
-      if (st.magnetT > 0) {
-        ctx.save();
-        ctx.strokeStyle = "rgba(255,80,110,0.68)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([7, 8]);
-        for (let i = 0; i < 3; i++) {
-          const r = ps * (0.55 + i * 0.18 + Math.sin(st.time * 5 + i) * 0.03);
-          ctx.beginPath();
-          ctx.ellipse(px, pyy - ps * 0.12, r, r * 0.42, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.restore();
-      }
-
-      const blink = st.invulnT > 0 && Math.floor(st.time * 10) % 2 === 0;
-      if (!blink) {
-        ctx.save();
-        ctx.translate(px, pyy);
-        ctx.rotate(tilt);
-
-        const by = ps * 0.16; // board center offset below player origin
-
-        // water shadow under board
-        ctx.fillStyle = "rgba(6,60,110,0.18)";
-        ctx.beginPath();
-        ctx.ellipse(0, by + ps * 0.06, ps * 0.21, ps * 0.46, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // surfboard: narrow nose pointing away, rounded wide tail
-        const bg = ctx.createLinearGradient(-ps * 0.2, 0, ps * 0.2, 0);
-        bg.addColorStop(0, "#fbf6e8");
-        bg.addColorStop(0.5, "#fdf9ee");
-        bg.addColorStop(1, "#e7d9b8");
-        ctx.fillStyle = bg;
-        ctx.beginPath();
-        ctx.moveTo(0, by - ps * 0.47);
-        ctx.bezierCurveTo(ps * 0.10, by - ps * 0.40, ps * 0.17, by - ps * 0.12, ps * 0.165, by + ps * 0.10);
-        ctx.bezierCurveTo(ps * 0.16, by + ps * 0.32, ps * 0.10, by + ps * 0.44, 0, by + ps * 0.44);
-        ctx.bezierCurveTo(-ps * 0.10, by + ps * 0.44, -ps * 0.16, by + ps * 0.32, -ps * 0.165, by + ps * 0.10);
-        ctx.bezierCurveTo(-ps * 0.17, by - ps * 0.12, -ps * 0.10, by - ps * 0.40, 0, by - ps * 0.47);
-        ctx.fill();
-
-        // orange center stripe, tapering with the board
-        const sg = ctx.createLinearGradient(0, by - ps * 0.4, 0, by + ps * 0.4);
-        sg.addColorStop(0, "#ffc14f");
-        sg.addColorStop(1, "#ef8f21");
-        ctx.fillStyle = sg;
-        ctx.beginPath();
-        ctx.moveTo(0, by - ps * 0.43);
-        ctx.bezierCurveTo(ps * 0.05, by - ps * 0.3, ps * 0.06, by, ps * 0.05, by + ps * 0.2);
-        ctx.bezierCurveTo(ps * 0.045, by + ps * 0.34, ps * 0.02, by + ps * 0.385, 0, by + ps * 0.385);
-        ctx.bezierCurveTo(-ps * 0.02, by + ps * 0.385, -ps * 0.045, by + ps * 0.34, -ps * 0.05, by + ps * 0.2);
-        ctx.bezierCurveTo(-ps * 0.06, by, -ps * 0.05, by - ps * 0.3, 0, by - ps * 0.43);
-        ctx.fill();
-        // gloss highlight along the rail
-        ctx.strokeStyle = "rgba(255,255,255,0.4)";
-        ctx.lineWidth = ps * 0.014;
-        ctx.beginPath();
-        ctx.moveTo(-ps * 0.105, by - ps * 0.28);
-        ctx.quadraticCurveTo(-ps * 0.135, by + ps * 0.02, -ps * 0.11, by + ps * 0.3);
-        ctx.stroke();
-
-        // soft shadow where the surfer stands
-        ctx.fillStyle = "rgba(90,60,20,0.14)";
-        ctx.beginPath();
-        ctx.ellipse(0, by - ps * 0.02, ps * 0.14, ps * 0.05, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // ----- surfer (back view) -----
-        const fy = by - ps * 0.03; // foot line on the deck
-        const skin = ctx.createLinearGradient(-ps * 0.18, 0, ps * 0.18, 0);
-        skin.addColorStop(0, "#e8ab70");
-        skin.addColorStop(0.55, "#d3935a");
-        skin.addColorStop(1, "#b97a45");
-
-        // legs: knees slightly bent, feet apart (surf stance)
-        ctx.strokeStyle = skin;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.lineWidth = ps * 0.088;
-        ctx.beginPath();
-        ctx.moveTo(-ps * 0.065, fy - ps * 0.30);
-        ctx.lineTo(-ps * 0.098, fy - ps * 0.15);
-        ctx.lineTo(-ps * 0.085, fy - ps * 0.01);
-        ctx.moveTo(ps * 0.065, fy - ps * 0.30);
-        ctx.lineTo(ps * 0.102, fy - ps * 0.14);
-        ctx.lineTo(ps * 0.09, fy + ps * 0.02);
-        ctx.stroke();
-
-        // feet
-        ctx.fillStyle = "#c4854a";
-        ctx.beginPath();
-        ctx.ellipse(-ps * 0.085, fy + ps * 0.005, ps * 0.048, ps * 0.028, -0.2, 0, Math.PI * 2);
-        ctx.ellipse(ps * 0.09, fy + ps * 0.035, ps * 0.05, ps * 0.03, 0.2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // board shorts with hem
-        const short = ctx.createLinearGradient(-ps * 0.15, 0, ps * 0.15, 0);
-        short.addColorStop(0, "#ff9350");
-        short.addColorStop(0.5, "#f2762e");
-        short.addColorStop(1, "#d55a1a");
-        ctx.fillStyle = short;
-        ctx.beginPath();
-        ctx.moveTo(-ps * 0.112, fy - ps * 0.42);
-        ctx.lineTo(ps * 0.112, fy - ps * 0.42);
-        ctx.bezierCurveTo(ps * 0.135, fy - ps * 0.34, ps * 0.142, fy - ps * 0.28, ps * 0.128, fy - ps * 0.235);
-        ctx.lineTo(ps * 0.038, fy - ps * 0.255);
-        ctx.lineTo(0, fy - ps * 0.30);
-        ctx.lineTo(-ps * 0.038, fy - ps * 0.255);
-        ctx.lineTo(-ps * 0.128, fy - ps * 0.235);
-        ctx.bezierCurveTo(-ps * 0.142, fy - ps * 0.28, -ps * 0.135, fy - ps * 0.34, -ps * 0.112, fy - ps * 0.42);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = "rgba(130,45,0,0.35)";
-        ctx.fillRect(-ps * 0.112, fy - ps * 0.43, ps * 0.224, ps * 0.025);
-
-        // torso: shoulders wider than waist, subtle spine shading
-        ctx.fillStyle = skin;
-        ctx.beginPath();
-        ctx.moveTo(-ps * 0.10, fy - ps * 0.42);
-        ctx.bezierCurveTo(-ps * 0.115, fy - ps * 0.52, -ps * 0.135, fy - ps * 0.60, -ps * 0.13, fy - ps * 0.66);
-        ctx.quadraticCurveTo(0, fy - ps * 0.73, ps * 0.13, fy - ps * 0.66);
-        ctx.bezierCurveTo(ps * 0.135, fy - ps * 0.60, ps * 0.115, fy - ps * 0.52, ps * 0.10, fy - ps * 0.42);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(120,70,30,0.22)";
-        ctx.lineWidth = ps * 0.012;
-        ctx.beginPath();
-        ctx.moveTo(0, fy - ps * 0.47);
-        ctx.lineTo(0, fy - ps * 0.62);
-        ctx.stroke();
-
-        // arms: spread wide, raised at the wrists for balance
-        ctx.strokeStyle = skin;
-        ctx.lineWidth = ps * 0.062;
-        ctx.beginPath();
-        ctx.moveTo(-ps * 0.115, fy - ps * 0.64);
-        ctx.lineTo(-ps * 0.24, fy - ps * 0.68);
-        ctx.lineTo(-ps * 0.335, fy - ps * 0.76);
-        ctx.moveTo(ps * 0.115, fy - ps * 0.64);
-        ctx.lineTo(ps * 0.24, fy - ps * 0.68);
-        ctx.lineTo(ps * 0.335, fy - ps * 0.76);
-        ctx.stroke();
-        ctx.fillStyle = "#d3935a";
-        ctx.beginPath();
-        ctx.arc(-ps * 0.348, fy - ps * 0.77, ps * 0.034, 0, Math.PI * 2);
-        ctx.arc(ps * 0.348, fy - ps * 0.77, ps * 0.034, 0, Math.PI * 2);
-        ctx.fill();
-
-        // neck + head
-        ctx.fillStyle = "#cf8f55";
-        ctx.fillRect(-ps * 0.03, fy - ps * 0.77, ps * 0.06, ps * 0.07);
-        const headY = fy - ps * 0.845;
-        ctx.fillStyle = skin;
-        ctx.beginPath();
-        ctx.arc(0, headY, ps * 0.096, 0, Math.PI * 2);
-        ctx.fill();
-        // ears
-        ctx.fillStyle = "#d3935a";
-        ctx.beginPath();
-        ctx.arc(-ps * 0.096, headY + ps * 0.012, ps * 0.023, 0, Math.PI * 2);
-        ctx.arc(ps * 0.096, headY + ps * 0.012, ps * 0.023, 0, Math.PI * 2);
-        ctx.fill();
-        // hair: brown back-of-head cap with a spiky crown
-        const hg = ctx.createLinearGradient(0, headY - ps * 0.13, 0, headY + ps * 0.05);
-        hg.addColorStop(0, "#7d5431");
-        hg.addColorStop(1, "#52321a");
-        ctx.fillStyle = hg;
-        ctx.beginPath();
-        ctx.arc(0, headY - ps * 0.005, ps * 0.099, Math.PI * 0.86, Math.PI * 2.14);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(-ps * 0.072, headY - ps * 0.062);
-        ctx.quadraticCurveTo(-ps * 0.052, headY - ps * 0.135, -ps * 0.02, headY - ps * 0.092);
-        ctx.quadraticCurveTo(0, headY - ps * 0.15, ps * 0.03, headY - ps * 0.098);
-        ctx.quadraticCurveTo(ps * 0.062, headY - ps * 0.128, ps * 0.077, headY - ps * 0.058);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.restore();
-      }
-
-      // shield bubble
-      if (st.shield) {
-        const shieldG = ctx.createRadialGradient(px, pyy - ps * 0.2, ps * 0.1, px, pyy - ps * 0.2, ps * 0.78);
-        shieldG.addColorStop(0, "rgba(139,234,255,0.08)");
-        shieldG.addColorStop(0.72, "rgba(60,220,255,0.18)");
-        shieldG.addColorStop(1, "rgba(60,220,255,0.02)");
-        ctx.fillStyle = shieldG;
-        ctx.strokeStyle = "rgba(180,245,255,0.95)";
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(px, pyy - ps * 0.2, ps * 0.68 + Math.sin(st.time * 6) * 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-
-      // turbo speed lines
-      if (st.turboT > 0) {
-        ctx.strokeStyle = "rgba(255,255,255,0.48)";
-        for (let i = 0; i < 20; i++) {
-          const y = rnd(hz, H);
-          const x = Math.random() < 0.5 ? rnd(0, W * 0.26) : rnd(W * 0.74, W);
-          ctx.lineWidth = rnd(2, 5);
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x + (x < W / 2 ? -1 : 1) * rnd(8, 22), y + rnd(60, 150));
-          ctx.stroke();
-        }
-      }
-
-      // particles
-      for (const p of st.parts) {
-        ctx.globalAlpha = Math.max(0, p.life / p.max);
-        if (p.text) {
-          ctx.font = `900 ${p.size}px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillStyle = p.color;
-          ctx.strokeStyle = "rgba(0,50,90,0.6)";
-          ctx.lineWidth = 4;
-          ctx.strokeText(p.text, p.x, p.y);
-          ctx.fillText(p.text, p.x, p.y);
-        } else {
-          ctx.fillStyle = p.color;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      ctx.globalAlpha = 1;
-    };
-
-    // ---------- loop ----------
-    let raf = 0;
-    let last = performance.now();
-    const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      const st = stRef.current;
-      update(st, dt);
-      drawScene(st);
-
-      const next: Hud = {
-        score: st.score,
-        best: bestRef.current,
-        level: st.level,
-        turbo: Math.ceil(st.turboT),
-        magnet: Math.ceil(st.magnetT),
-        slow: Math.ceil(st.slowT),
-        shield: st.shield,
-        over: st.over,
-        newBest: st.over && st.score > 0 && st.score >= bestRef.current,
-      };
-      const json = JSON.stringify(next);
-      if (json !== hudJsonRef.current) {
-        hudJsonRef.current = json;
-        setHud(next);
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("keydown", onKey);
-      canvas.removeEventListener("pointerdown", onPD);
-      canvas.removeEventListener("pointerup", onPU);
-    };
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const px0 = useRef(0);
+  const pDown = useRef(false);
+  const onPointerDown = (e: React.PointerEvent) => {
+    px0.current = e.clientX;
+    pDown.current = true;
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (!pDown.current) return;
+    pDown.current = false;
+    const dx = e.clientX - px0.current;
+    if (Math.abs(dx) > 24) move(dx > 0 ? 1 : -1);
+    else move(e.clientX > window.innerWidth / 2 ? 1 : -1);
+  };
+
   return (
-    <div className={styles.wrap}>
-      <canvas ref={canvasRef} className={styles.canvas} />
+    <div className={styles.wrap} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+      <Canvas
+        className={styles.canvas}
+        dpr={[1, 2]}
+        camera={{ fov: 60, near: 0.1, far: 400, position: [0, 3.1, 5.4] }}
+        gl={{ antialias: true }}
+      >
+        <Scene stRef={stRef} bestRef={bestRef} onHud={setHud} />
+      </Canvas>
 
       <div className={styles.hud}>
         <div className={styles.topRow}>
           <div className={styles.score}>
-            <div className={styles.scoreMain}>SHELLS {hud.score}</div>
+            <div className={styles.scoreMain}>🐚 {hud.score}</div>
             <div className={styles.scoreBest}>BEST {hud.best}</div>
           </div>
           <div className={styles.rightCol}>
-            <div className={`${styles.pill} ${styles.pillTurbo}`}>
-              ⚡ TURBO x2
-            </div>
             <div className={`${styles.pill} ${styles.pillLevel}`}>
               🔥 <span>LEVEL {hud.level}</span>
             </div>
-          </div>
-        </div>
-
-        <div className={styles.banner}>
-          🏁 FREE SURF — survive as long as you can
-        </div>
-
-        {(hud.turbo > 0 || hud.magnet > 0 || hud.shield || hud.slow > 0) && (
-          <div className={styles.powerRow}>
             {hud.turbo > 0 && (
-              <div className={`${styles.powerChip} ${styles.pillTurbo}`}>
-                ⚡ {hud.turbo}s
-              </div>
+              <div className={`${styles.pill} ${styles.pillTurbo}`}>⚡ TURBO x2 · {hud.turbo}s</div>
             )}
             {hud.magnet > 0 && (
-              <div className={`${styles.powerChip} ${styles.pillMagnet}`}>
-                🧲 MAGNET {hud.magnet}s
-              </div>
+              <div className={`${styles.pill} ${styles.pillMagnet}`}>🧲 MAGNET · {hud.magnet}s</div>
             )}
-            {hud.shield && (
-              <div className={`${styles.powerChip} ${styles.pillShield}`}>
-                🛡️ SHIELD
-              </div>
-            )}
+            {hud.shield && <div className={`${styles.pill} ${styles.pillShield}`}>🛡️ SHIELD</div>}
             {hud.slow > 0 && (
-              <div className={`${styles.powerChip} ${styles.pillSlow}`}>
-                🌊 SLOW {hud.slow}s
-              </div>
+              <div className={`${styles.pill} ${styles.pillSlow}`}>🌊 SLOW WAVE · {hud.slow}s</div>
             )}
           </div>
-        )}
+        </div>
+
+        <div className={styles.banner}>🏁 FREE SURF — survive as long as you can</div>
 
         {showHint && !hud.over && (
           <div className={styles.hint}>
-            <div className={styles.hintIcons}>☝︎ ← →</div>
-            <div>SWIPE LEFT / RIGHT</div>
-            <div className={styles.hintSub}>to change lanes</div>
+            <div className={styles.hintIcons}>👆 ← →</div>
+            SWIPE LEFT / RIGHT
+            <div className={styles.hintSub}>tap or swipe to start · change lanes</div>
           </div>
         )}
 
@@ -1212,12 +1162,10 @@ export default function SurfGame() {
               <div className={styles.cardTitle}>WIPEOUT!</div>
               <div className={styles.cardEmoji}>🏄🌊</div>
               <div className={styles.cardScoreLabel}>SHELLS COLLECTED</div>
-              <div className={styles.cardScore}>{hud.score}</div>
+              <div className={styles.cardScore}>🐚 {hud.score}</div>
               <div className={styles.cardBest}>BEST {hud.best}</div>
               {hud.newBest && <div className={styles.newBest}>🎉 NEW BEST!</div>}
-              <button className={styles.restart} onClick={restart}>
-                🔄 RESTART
-              </button>
+              <button className={styles.restart} onClick={restart}>🔄 RESTART</button>
             </div>
           </div>
         )}
