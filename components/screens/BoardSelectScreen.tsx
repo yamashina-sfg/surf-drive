@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BOARDS, saveBoardChoice, type BoardConfig } from "@/lib/boards";
 import IdleBackdrop from "./IdleBackdrop";
+import GameIcon from "../GameIcons";
 import shell from "./Shell.module.css";
 import styles from "./BoardSelectScreen.module.css";
 
@@ -61,7 +62,7 @@ export default function BoardSelectScreen({
         <div className={styles.content}>
           <header className={styles.header}>
             <button className={styles.backBtn} onClick={onBack} aria-label="Back">
-              ←
+              <GameIcon name="arrowLeft" />
             </button>
             <h1 className={styles.title}>BOARD CUSTOMIZE</h1>
             <span className={styles.headerSpacer} />

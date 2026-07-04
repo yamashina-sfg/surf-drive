@@ -11,6 +11,17 @@
 }
 
 .stage {
+  --ui-radius: 16px;
+  --ui-radius-lg: 22px;
+  --ui-stroke: rgba(255, 255, 255, 0.24);
+  --ui-glass-top: rgba(20, 70, 105, 0.84);
+  --ui-glass-bottom: rgba(4, 28, 52, 0.9);
+  --ui-shadow: 0 12px 30px rgba(0, 24, 58, 0.34);
+  --ui-inner: inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 0 -2px 0 rgba(0, 0, 0, 0.16);
+  --ui-gold: linear-gradient(180deg, #fff27a 0%, #ffc929 48%, #f28a18 100%);
+  --ui-blue: linear-gradient(180deg, #75eeff 0%, #18b9ea 56%, #0b77cf 100%);
+  --ui-red: linear-gradient(180deg, #ff806c 0%, #e6483a 100%);
+  --ui-green: linear-gradient(180deg, #84ffd9 0%, #2ed1b8 100%);
   position: relative;
   width: min(100vw, calc(100dvh * 0.587));
   height: 100dvh;
@@ -79,20 +90,78 @@
 .score {
   min-width: 0;
   flex: 0 1 auto;
-  text-shadow: 0 4px 0 rgba(0, 67, 124, 0.18), 0 6px 18px rgba(0, 40, 80, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-shadow: 0 3px 0 rgba(0, 67, 124, 0.18), 0 6px 18px rgba(0, 40, 80, 0.38);
+}
+
+.scorePanel,
+.bestPanel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid var(--ui-stroke);
+  background: linear-gradient(180deg, var(--ui-glass-top), var(--ui-glass-bottom));
+  box-shadow: var(--ui-inner), var(--ui-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.scorePanel {
+  min-height: clamp(54px, 13cqw, 72px);
+  padding: 7px 12px 7px 8px;
+  border-radius: var(--ui-radius-lg);
+}
+
+.bestPanel {
+  width: fit-content;
+  min-height: clamp(26px, 6.5cqw, 34px);
+  padding: 3px 10px 3px 7px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: clamp(12px, 3.1cqw, 16px);
+  font-weight: 850;
+  letter-spacing: 0.5px;
+}
+
+.bestPanel svg {
+  width: clamp(17px, 4.4cqw, 22px);
+  height: clamp(17px, 4.4cqw, 22px);
+}
+
+.iconBadge {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: clamp(38px, 10cqw, 52px);
+  height: clamp(38px, 10cqw, 52px);
+  border-radius: 15px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.38), 0 6px 14px rgba(0, 30, 70, 0.26);
+}
+
+.iconBadge svg {
+  width: 82%;
+  height: 82%;
+}
+
+.iconBadgeScore {
+  background: var(--ui-blue);
 }
 
 .scoreLabel {
+  display: block;
   font-size: clamp(11px, 2.8cqw, 14px);
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: rgba(255, 255, 255, 0.75);
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .scoreMain {
+  display: block;
   font-size: clamp(38px, 11cqw, 66px);
-  font-weight: 800;
-  line-height: 1.05;
+  font-weight: 950;
+  line-height: 0.9;
   letter-spacing: 0;
 }
 
@@ -117,23 +186,30 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
   min-height: clamp(30px, 8cqw, 40px);
   padding: 0 clamp(12px, 3.6cqw, 20px);
-  border-radius: 999px;
+  border-radius: var(--ui-radius-lg);
   font-size: clamp(12px, 3cqw, 16px);
-  font-weight: 700;
+  font-weight: 900;
   letter-spacing: 0;
-  background: rgba(16, 42, 67, 0.82);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18), 0 7px 18px rgba(0, 30, 60, 0.34);
+  border: 1.5px solid var(--ui-stroke);
+  background: linear-gradient(180deg, var(--ui-glass-top), var(--ui-glass-bottom));
+  box-shadow: var(--ui-inner), var(--ui-shadow);
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.pill svg {
+  width: clamp(18px, 4.8cqw, 24px);
+  height: clamp(18px, 4.8cqw, 24px);
+  flex: 0 0 auto;
+}
+
 .pillTurbo {
-  background: linear-gradient(180deg, #ffe45e 0%, #ffc400 62%, #f5a400 100%);
+  background: var(--ui-gold);
   color: #10233a;
   border: 2px solid rgba(255, 247, 135, 0.9);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), 0 7px 0 rgba(214, 151, 0, 0.55),
@@ -141,23 +217,23 @@
 }
 
 .pillMagnet {
-  background: linear-gradient(180deg, #ff6b5e 0%, #e6483a 100%);
+  background: var(--ui-red);
   color: #fff;
 }
 
 .pillShield {
-  background: #21c8ff;
+  background: var(--ui-blue);
   color: #0b2c44;
 }
 
 .pillSlow {
-  background: #2ec4b6;
+  background: var(--ui-green);
   color: #06333c;
 }
 
 .pillLevel {
-  background: rgba(16, 42, 67, 0.88);
-  color: #ff9f1c;
+  background: linear-gradient(180deg, #1f5578 0%, #0b2d4e 100%);
+  color: #ffd86a;
 }
 
 .pillLevel span {
@@ -174,6 +250,7 @@
   position: relative;
   width: clamp(148px, 52cqw, 300px);
   height: clamp(22px, 5.7cqw, 35px);
+  filter: drop-shadow(0 10px 18px rgba(0, 35, 75, 0.26));
 }
 
 .waveIcon {
@@ -185,9 +262,15 @@
   transform: translateY(-50%);
   display: grid;
   place-items: center;
-  font-size: clamp(24px, 6.6cqw, 38px);
-  filter: drop-shadow(0 5px 8px rgba(0, 40, 80, 0.38));
+  border-radius: 50%;
+  background: var(--ui-blue);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), 0 5px 8px rgba(0, 40, 80, 0.38);
   z-index: 2;
+}
+
+.waveIcon svg {
+  width: 82%;
+  height: 82%;
 }
 
 .waveTrack {
@@ -198,8 +281,9 @@
   transform: translateY(-50%);
   height: clamp(15px, 3.7cqw, 22px);
   border-radius: 999px;
-  background: rgba(9, 39, 64, 0.84);
-  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.25), 0 5px 12px rgba(0, 40, 80, 0.28);
+  background: linear-gradient(180deg, #092641 0%, #0c3a5a 52%, #061b31 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.28), 0 5px 12px rgba(0, 40, 80, 0.28);
   overflow: hidden;
 }
 
@@ -207,21 +291,28 @@
   position: absolute;
   inset: 4px auto 4px 7px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #53e4ff, #17bad9);
+  background: linear-gradient(180deg, #98ffff 0%, #37e2ff 45%, #17bad9 100%);
   box-shadow: 0 0 14px rgba(83, 228, 255, 0.75);
+  animation: meterGlow 1.15s ease-in-out infinite;
+}
+
+@keyframes meterGlow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.22); }
 }
 
 .banner {
   align-self: center;
   margin: 0;
   padding: clamp(11px, 2.8cqw, 17px) clamp(18px, 4.8cqw, 36px);
-  border-radius: clamp(16px, 3.8cqw, 24px);
-  background: linear-gradient(180deg, rgba(20, 54, 82, 0.86), rgba(8, 35, 61, 0.84));
+  border-radius: var(--ui-radius-lg);
+  background: linear-gradient(180deg, rgba(30, 82, 115, 0.9), rgba(6, 31, 55, 0.88));
   font-size: clamp(13px, 3.4cqw, 19px);
   font-weight: 800;
   letter-spacing: 1px;
   text-align: center;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.14), 0 7px 18px rgba(0, 30, 60, 0.32);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  box-shadow: var(--ui-inner), var(--ui-shadow);
   max-width: 88%;
   animation: bannerFadeIn 0.5s ease 0.15s both;
 }
@@ -285,7 +376,7 @@
   gap: 8px;
   padding: 10px 20px;
   border-radius: 999px;
-  background: rgba(10, 35, 58, 0.85);
+  background: linear-gradient(180deg, rgba(30, 82, 115, 0.9), rgba(6, 31, 55, 0.88));
   border: 2px solid rgba(255, 255, 255, 0.35);
   font-size: clamp(14px, 3.6cqw, 19px);
   font-weight: 800;
@@ -296,7 +387,9 @@
 }
 
 .pickupIcon {
-  font-size: 1.15em;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
 }
 
 @keyframes pickupPop {
@@ -316,19 +409,21 @@
   align-items: center;
   gap: clamp(12px, 3.3cqw, 24px);
   padding: clamp(13px, 3.4cqw, 22px) clamp(22px, 6.2cqw, 52px);
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(16, 42, 67, 0.86), rgba(6, 30, 52, 0.84));
+  border-radius: var(--ui-radius-lg);
+  background: linear-gradient(180deg, rgba(30, 82, 115, 0.88), rgba(5, 28, 51, 0.9));
   text-align: center;
-  font-weight: 700;
+  font-weight: 900;
   font-size: clamp(18px, 4.7cqw, 31px);
   line-height: 1.3;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12), 0 10px 28px rgba(0, 30, 60, 0.42);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  box-shadow: var(--ui-inner), 0 16px 34px rgba(0, 30, 60, 0.42);
   animation: pulse 1.6s ease-in-out infinite, hintFade 0.4s ease 6s forwards;
   white-space: nowrap;
 }
 
 .hintHand {
-  font-size: clamp(42px, 11.5cqw, 72px);
+  width: clamp(42px, 11.5cqw, 72px);
+  height: clamp(42px, 11.5cqw, 72px);
   line-height: 1;
 }
 
@@ -337,9 +432,15 @@
 }
 
 .hintArrows {
-  font-size: clamp(28px, 7.4cqw, 50px);
+  display: flex;
+  gap: 4px;
+  align-items: center;
   line-height: 0.8;
-  letter-spacing: 0;
+}
+
+.hintArrows svg {
+  width: clamp(30px, 7.4cqw, 50px);
+  height: clamp(30px, 7.4cqw, 50px);
 }
 
 .hintSub {
@@ -419,9 +520,20 @@
   text-shadow: 0 4px 0 rgba(180, 120, 0, 0.5), 0 0 24px rgba(255, 214, 10, 0.42);
 }
 
-.cardEmoji {
-  font-size: 48px;
-  margin: 8px 0;
+.cardIcon {
+  width: 56px;
+  height: 56px;
+  margin: 8px auto;
+  border-radius: 18px;
+  background: var(--ui-blue);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 10px 20px rgba(0, 30, 70, 0.3);
+}
+
+.cardIcon svg {
+  width: 82%;
+  height: 82%;
 }
 
 .cardScore {
@@ -447,7 +559,9 @@
 }
 
 .newBest {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 10px;
   padding: 5px 14px;
   border-radius: 999px;
@@ -456,6 +570,11 @@
   font-weight: 800;
   letter-spacing: 1px;
   animation: pulse2 1s ease-in-out infinite;
+}
+
+.newBest svg {
+  width: 18px;
+  height: 18px;
 }
 
 @keyframes pulse2 {
@@ -481,6 +600,18 @@
   cursor: pointer;
   box-shadow: 0 6px 0 #c98a00, 0 10px 24px rgba(0, 20, 40, 0.4);
   transition: transform 0.08s ease;
+}
+
+.restart svg,
+.cardSecondary svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.restart:hover,
+.cardSecondary:hover {
+  filter: brightness(1.08);
 }
 
 .restart:active {
@@ -516,3 +647,5 @@
   transform: translateY(2px);
   background: rgba(255, 255, 255, 0.18);
 }
+  gap: 8px;
+  gap: 6px;

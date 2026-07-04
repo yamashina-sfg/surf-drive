@@ -305,7 +305,181 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
 
 const texCache = new Map<string, THREE.Texture>();
 
-function itemTexture(key: string, emoji: string, badge = false): THREE.Texture {
+function drawCanvasGameIcon(g: CanvasRenderingContext2D, kind: Kind, badge: boolean) {
+  const cx = 128;
+  const cy = badge ? 132 : 128;
+  g.save();
+  g.lineCap = "round";
+  g.lineJoin = "round";
+
+  if (kind === "turbo") {
+    const grad = g.createLinearGradient(88, 42, 168, 214);
+    grad.addColorStop(0, "#fff36a");
+    grad.addColorStop(0.55, "#ffba1f");
+    grad.addColorStop(1, "#f26c18");
+    g.fillStyle = grad;
+    g.strokeStyle = "#7a3600";
+    g.lineWidth = 12;
+    g.beginPath();
+    g.moveTo(144, 22);
+    g.lineTo(78, 132);
+    g.lineTo(122, 132);
+    g.lineTo(100, 232);
+    g.lineTo(184, 104);
+    g.lineTo(138, 104);
+    g.closePath();
+    g.stroke();
+    g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.75)";
+    g.lineWidth = 5;
+    g.stroke();
+  } else if (kind === "magnet") {
+    const grad = g.createLinearGradient(64, 35, 192, 224);
+    grad.addColorStop(0, "#ff806c");
+    grad.addColorStop(1, "#d91e42");
+    g.fillStyle = grad;
+    g.strokeStyle = "#651426";
+    g.lineWidth = 12;
+    g.beginPath();
+    g.moveTo(64, 34);
+    g.lineTo(98, 34);
+    g.lineTo(98, 142);
+    g.quadraticCurveTo(98, 184, 128, 184);
+    g.quadraticCurveTo(158, 184, 158, 142);
+    g.lineTo(158, 34);
+    g.lineTo(192, 34);
+    g.lineTo(192, 146);
+    g.quadraticCurveTo(192, 226, 128, 226);
+    g.quadraticCurveTo(64, 226, 64, 146);
+    g.closePath();
+    g.stroke();
+    g.fill();
+    g.fillStyle = "#f8fdff";
+    g.fillRect(64, 34, 34, 32);
+    g.fillRect(158, 34, 34, 32);
+  } else if (kind === "shield") {
+    const grad = g.createLinearGradient(56, 20, 200, 224);
+    grad.addColorStop(0, "#7df2ff");
+    grad.addColorStop(0.6, "#1cbceb");
+    grad.addColorStop(1, "#1175d6");
+    g.fillStyle = grad;
+    g.strokeStyle = "#063766";
+    g.lineWidth = 12;
+    g.beginPath();
+    g.moveTo(cx, 22);
+    g.lineTo(202, 52);
+    g.lineTo(202, 112);
+    g.quadraticCurveTo(202, 184, cx, 226);
+    g.quadraticCurveTo(54, 184, 54, 112);
+    g.lineTo(54, 52);
+    g.closePath();
+    g.stroke();
+    g.fill();
+    g.fillStyle = "rgba(255,255,255,0.28)";
+    g.beginPath();
+    g.moveTo(cx, 42);
+    g.lineTo(184, 64);
+    g.lineTo(184, 112);
+    g.quadraticCurveTo(184, 166, cx, 204);
+    g.closePath();
+    g.fill();
+  } else if (kind === "slow") {
+    const grad = g.createLinearGradient(42, 54, 210, 212);
+    grad.addColorStop(0, "#8ff8ff");
+    grad.addColorStop(0.55, "#1dbdea");
+    grad.addColorStop(1, "#076db8");
+    g.fillStyle = grad;
+    g.strokeStyle = "#064269";
+    g.lineWidth = 12;
+    g.beginPath();
+    g.moveTo(36, 164);
+    g.quadraticCurveTo(68, 78, 138, 78);
+    g.quadraticCurveTo(216, 78, 218, 152);
+    g.quadraticCurveTo(196, 126, 164, 146);
+    g.quadraticCurveTo(208, 154, 208, 190);
+    g.quadraticCurveTo(208, 228, 152, 228);
+    g.quadraticCurveTo(92, 228, 36, 164);
+    g.closePath();
+    g.stroke();
+    g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.78)";
+    g.lineWidth = 10;
+    g.beginPath();
+    g.moveTo(74, 162);
+    g.quadraticCurveTo(120, 132, 176, 158);
+    g.stroke();
+  } else if (kind === "shell") {
+    const grad = g.createLinearGradient(60, 44, 190, 210);
+    grad.addColorStop(0, "#ffd6ff");
+    grad.addColorStop(0.55, "#b879ff");
+    grad.addColorStop(1, "#7047d8");
+    g.fillStyle = grad;
+    g.strokeStyle = "#ffffff";
+    g.lineWidth = 9;
+    g.beginPath();
+    g.moveTo(cx, 48);
+    g.bezierCurveTo(68, 70, 46, 142, 70, 196);
+    g.quadraticCurveTo(cx, 228, 186, 196);
+    g.bezierCurveTo(210, 142, 188, 70, cx, 48);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.strokeStyle = "rgba(255,255,255,0.72)";
+    g.lineWidth = 7;
+    [-42, -20, 0, 20, 42].forEach((x) => {
+      g.beginPath();
+      g.moveTo(cx, 206);
+      g.lineTo(cx + x, 78);
+      g.stroke();
+    });
+  } else if (kind === "star") {
+    const grad = g.createLinearGradient(58, 40, 196, 218);
+    grad.addColorStop(0, "#fff68a");
+    grad.addColorStop(1, "#ff9d1c");
+    g.fillStyle = grad;
+    g.strokeStyle = "#784300";
+    g.lineWidth = 10;
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 42 : 92;
+      const a = -Math.PI / 2 + i * (Math.PI / 5);
+      g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    g.closePath();
+    g.stroke();
+    g.fill();
+  } else {
+    const orange = kind === "fish2";
+    const grad = g.createLinearGradient(48, 82, 214, 176);
+    grad.addColorStop(0, orange ? "#ffb033" : "#49d4ff");
+    grad.addColorStop(1, orange ? "#f06a17" : "#087bc1");
+    g.fillStyle = grad;
+    g.strokeStyle = orange ? "#8b3300" : "#064269";
+    g.lineWidth = 10;
+    g.beginPath();
+    g.ellipse(cx, cy, 76, 38, 0, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.moveTo(60, cy);
+    g.lineTo(24, cy - 34);
+    g.lineTo(28, cy + 34);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.fillStyle = "#fff";
+    g.beginPath();
+    g.arc(166, cy - 10, 10, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#07395f";
+    g.beginPath();
+    g.arc(169, cy - 10, 4, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+function itemTexture(key: string, kind: Kind, badge = false): THREE.Texture {
   const hit = texCache.get(key);
   if (hit) return hit;
   const c = document.createElement("canvas");
@@ -325,7 +499,6 @@ function itemTexture(key: string, emoji: string, badge = false): THREE.Texture {
     g.lineWidth = 10;
     g.strokeStyle = "#ffffff";
     g.stroke();
-    g.font = "100px sans-serif";
   } else {
     const rg = g.createRadialGradient(128, 128, 10, 128, 128, 120);
     rg.addColorStop(0, "rgba(255,255,255,0.55)");
@@ -333,11 +506,8 @@ function itemTexture(key: string, emoji: string, badge = false): THREE.Texture {
     rg.addColorStop(1, "rgba(255,255,255,0)");
     g.fillStyle = rg;
     g.fillRect(0, 0, 256, 256);
-    g.font = "150px sans-serif";
   }
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillText(emoji, 128, badge ? 132 : 130);
+  drawCanvasGameIcon(g, kind, badge);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
@@ -469,11 +639,6 @@ function boardPatternTexture(pattern: BoardConfig["pattern"], stripeColor: strin
   texCache.set(key, t);
   return t;
 }
-
-export const EMOJI_SPRITE: Partial<Record<Kind, string>> = {
-  fish: "🐟", fish2: "🐠", shell: "🐚", star: "⭐",
-  turbo: "⚡", magnet: "🧲", shield: "🛡️", slow: "🌊",
-};
 
 // ---------- water shader ----------
 
@@ -777,7 +942,7 @@ function BlobShadow({ r }: { r: number }) {
 function ItemSprite({ kind }: { kind: Kind }) {
   const isPower = POWERUPS.includes(kind);
   const tex = useMemo(
-    () => itemTexture(kind, EMOJI_SPRITE[kind] || "❓", isPower),
+    () => itemTexture(kind, kind, isPower),
     [kind, isPower]
   );
   return (
@@ -824,7 +989,7 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
     s.bezierCurveTo(0.19, 0.5, 0.12, 0.72, 0, 0.72);
     s.bezierCurveTo(-0.12, 0.72, -0.19, 0.5, -0.2, 0.15);
     s.bezierCurveTo(-0.21, -0.2, -0.14, -0.7, 0, -0.85);
-    // 厚みを増して立体感を強調（旧0.07→0.11）
+    // 厚みを増して立体感を強調
     const g = new THREE.ExtrudeGeometry(s, {
       depth: 0.11, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.025, bevelSegments: 3,
     });
@@ -858,7 +1023,7 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
     [board.pattern, board.stripeColor]
   );
   const boltTex = useMemo(
-    () => (board.pattern === "bolt" ? itemTexture("board-bolt-decal", "⚡") : null),
+    () => (board.pattern === "bolt" ? itemTexture("board-bolt-decal", "turbo") : null),
     [board.pattern]
   );
 

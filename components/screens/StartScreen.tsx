@@ -1,6 +1,7 @@
 "use client";
 
 import IdleBackdrop from "./IdleBackdrop";
+import GameIcon from "../GameIcons";
 import shell from "./Shell.module.css";
 import styles from "./StartScreen.module.css";
 
@@ -30,15 +31,15 @@ export default function StartScreen({
 
           <div className={styles.actions}>
             <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={onStart}>
-              <span className={styles.btnIcon}>▶</span>
+              <GameIcon name="play" className={styles.btnIcon} />
               START
             </button>
             <button className={`${styles.btn} ${styles.btnSecondary}`} onClick={onCustomize}>
-              <span className={styles.btnIcon}>🏄</span>
+              <GameIcon name="board" className={styles.btnIcon} />
               BOARD CUSTOMIZE
             </button>
             <button className={`${styles.btn} ${styles.btnGhost}`} onClick={onHowToPlay}>
-              <span className={styles.btnIcon}>?</span>
+              <GameIcon name="settings" className={styles.btnIcon} />
               HOW TO PLAY
             </button>
           </div>

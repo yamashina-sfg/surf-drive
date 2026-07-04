@@ -80,10 +80,14 @@
   border: none;
   border-radius: 18px;
   font-size: clamp(16px, 4.6cqw, 20px);
-  font-weight: 700;
+  font-weight: 850;
   letter-spacing: 0.5px;
   cursor: pointer;
-  transition: transform 0.08s ease, filter 0.15s ease;
+  transition: transform 0.08s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
 }
 
 .btn:active {
@@ -91,8 +95,9 @@
 }
 
 .btnIcon {
-  font-size: 0.95em;
-  line-height: 1;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
 }
 
 .btnPrimary {

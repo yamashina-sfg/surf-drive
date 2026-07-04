@@ -5,6 +5,7 @@ import { Canvas } from "@react-three/fiber";
 import { Scene, initState, BEST_KEY, type GS, type Hud, type Kind } from "@/lib/engine";
 import { hasSeenSwipeHint, markSwipeHintSeen, type BoardConfig } from "@/lib/boards";
 import AnimatedNumber from "./AnimatedNumber";
+import GameIcon, { type GameIconName } from "./GameIcons";
 import styles from "./SurfGame.module.css";
 
 const POWER_LABEL: Partial<Record<Kind, string>> = {
@@ -13,11 +14,11 @@ const POWER_LABEL: Partial<Record<Kind, string>> = {
   shield: "SHIELD UP!",
   slow: "SLOW WAVE!",
 };
-const POWER_ICON: Partial<Record<Kind, string>> = {
-  turbo: "⚡",
-  magnet: "🧲",
-  shield: "🛡️",
-  slow: "🌊",
+const POWER_ICON: Partial<Record<Kind, GameIconName>> = {
+  turbo: "turbo",
+  magnet: "magnet",
+  shield: "shield",
+  slow: "wave",
 };
 
 export default function SurfGame({
@@ -120,24 +121,35 @@ export default function SurfGame({
         <div className={styles.hud}>
           <div className={styles.topRow}>
             <div className={styles.score}>
-              <div className={styles.scoreLabel}>SHELLS</div>
-              <div className={styles.scoreMain}><AnimatedNumber value={hud.score} /></div>
-              <div className={styles.scoreBest}>BEST {bestShown}</div>
+              <div className={styles.scorePanel}>
+                <span className={`${styles.iconBadge} ${styles.iconBadgeScore}`}>
+                  <GameIcon name="score" />
+                </span>
+                <span>
+                  <span className={styles.scoreLabel}>SHELLS</span>
+                  <span className={styles.scoreMain}><AnimatedNumber value={hud.score} /></span>
+                </span>
+              </div>
+              <div className={styles.bestPanel}>
+                <GameIcon name="best" />
+                <span>BEST {bestShown}</span>
+              </div>
             </div>
             <div className={styles.rightCol}>
               <div className={`${styles.pill} ${styles.pillLevel}`}>
-                🔥 <span>LEVEL {hud.level}</span>
+                <GameIcon name="level" />
+                <span>LEVEL {hud.level}</span>
               </div>
-              {hud.turbo > 0 && <div className={`${styles.pill} ${styles.pillTurbo}`}>⚡ TURBO {hud.turbo}s</div>}
-              {hud.magnet > 0 && <div className={`${styles.pill} ${styles.pillMagnet}`}>🧲 MAGNET {hud.magnet}s</div>}
-              {hud.shield && <div className={`${styles.pill} ${styles.pillShield}`}>🛡️ SHIELD</div>}
-              {hud.slow > 0 && <div className={`${styles.pill} ${styles.pillSlow}`}>🌊 SLOW {hud.slow}s</div>}
+              {hud.turbo > 0 && <div className={`${styles.pill} ${styles.pillTurbo}`}><GameIcon name="turbo" /> TURBO {hud.turbo}s</div>}
+              {hud.magnet > 0 && <div className={`${styles.pill} ${styles.pillMagnet}`}><GameIcon name="magnet" /> MAGNET {hud.magnet}s</div>}
+              {hud.shield && <div className={`${styles.pill} ${styles.pillShield}`}><GameIcon name="shield" /> SHIELD</div>}
+              {hud.slow > 0 && <div className={`${styles.pill} ${styles.pillSlow}`}><GameIcon name="wave" /> SLOW {hud.slow}s</div>}
             </div>
           </div>
 
           <div className={styles.centerTop}>
             <div className={styles.waveMeter}>
-              <span className={styles.waveIcon}>🌊</span>
+              <span className={styles.waveIcon}><GameIcon name="wave" /></span>
               <span className={styles.waveTrack}>
                 <span
                   className={styles.waveFill}
@@ -161,16 +173,19 @@ export default function SurfGame({
 
           {pickupLabel && (
             <div className={styles.pickupBanner}>
-              <span className={styles.pickupIcon}>{pickupIcon}</span>
+              {pickupIcon && <GameIcon name={pickupIcon} className={styles.pickupIcon} />}
               {pickupLabel}
             </div>
           )}
 
           {showHint && !hud.over && (
             <div className={styles.hint}>
-              <div className={styles.hintHand}>☝</div>
+              <GameIcon name="tap" className={styles.hintHand} />
               <div className={styles.hintCopy}>
-                <div className={styles.hintArrows}>← →</div>
+                <div className={styles.hintArrows}>
+                  <GameIcon name="arrowLeft" />
+                  <GameIcon name="arrowRight" />
+                </div>
                 <div>SWIPE LEFT / RIGHT</div>
                 <div className={styles.hintSub}>to change lanes</div>
               </div>
@@ -188,15 +203,15 @@ export default function SurfGame({
               ))}
               <div className={styles.card}>
                 <div className={styles.cardTitle}>WIPEOUT!</div>
-                <div className={styles.cardEmoji}>🏄🌊</div>
+                <div className={styles.cardIcon}><GameIcon name="wave" /></div>
                 <div className={styles.cardScoreLabel}>FINAL SCORE</div>
                 <div className={styles.cardScore}><AnimatedNumber value={hud.score} /></div>
                 <div className={styles.cardBest}>BEST {bestShown}</div>
-                {hud.newBest && <div className={styles.newBest}>🎉 NEW BEST!</div>}
-                <button className={styles.restart} onClick={restart}>🔄 RESTART</button>
+                {hud.newBest && <div className={styles.newBest}><GameIcon name="best" /> NEW BEST!</div>}
+                <button className={styles.restart} onClick={restart}><GameIcon name="restart" /> RESTART</button>
                 <div className={styles.cardRow}>
-                  <button className={styles.cardSecondary} onClick={onChangeBoard}>🏄 CHANGE BOARD</button>
-                  <button className={styles.cardSecondary} onClick={onHome}>🏠 HOME</button>
+                  <button className={styles.cardSecondary} onClick={onChangeBoard}><GameIcon name="board" /> CHANGE BOARD</button>
+                  <button className={styles.cardSecondary} onClick={onHome}><GameIcon name="home" /> HOME</button>
                 </div>
               </div>
             </div>
