@@ -68,6 +68,7 @@ export interface GS {
   rev: number; // bumped whenever objs are added/removed
   levelUpFlashAt: number; // st.time のタイムスタンプ。0以下なら非表示
   pickupBanner: { kind: Kind; at: number } | null;
+  hitBurst: { x: number; at: number } | null;
 }
 
 export interface Hud {
@@ -134,6 +135,7 @@ export function initState(): GS {
     rev: 0,
     levelUpFlashAt: -1,
     pickupBanner: null,
+    hitBurst: null,
   };
   // pre-populate side scenery so the water isn't empty on load
   for (let z = 8; z < SPAWN_Z; z += DECO_GAP) {
@@ -279,10 +281,12 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
           // ボードのShield Bonusステータス（1-5）で被弾後の無敵時間が伸びる
           st.invulnT = 1.2 + board.shieldBonus * 0.18;
           st.rings.push({ x, z: 0, t: 0, color: "#21c8ff" });
+          st.hitBurst = { x, at: st.time };
           alive = false;
         } else {
           st.over = true;
           st.rings.push({ x, z: 0, t: 0, color: "#ffffff" });
+          st.hitBurst = { x, at: st.time };
           if (st.score > best.v) {
             best.v = st.score;
             localStorage.setItem(BEST_KEY, String(st.score));
@@ -399,6 +403,24 @@ function ringTexture(): THREE.Texture {
   return t;
 }
 
+function sunTexture(): THREE.Texture {
+  const hit = texCache.get("sun");
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  const rg = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  rg.addColorStop(0, "rgba(255,255,250,1)");
+  rg.addColorStop(0.28, "rgba(255,247,214,0.95)");
+  rg.addColorStop(0.55, "rgba(255,236,170,0.4)");
+  rg.addColorStop(1, "rgba(255,236,170,0)");
+  g.fillStyle = rg;
+  g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  texCache.set("sun", t);
+  return t;
+}
+
 /** ボードの模様（stripe/wave/bolt/sunset）をキャンバスに描いてテクスチャ化する */
 function boardPatternTexture(pattern: BoardConfig["pattern"], stripeColor: string): THREE.Texture {
   const key = `board-${pattern}-${stripeColor}`;
@@ -502,6 +524,10 @@ void main() {
   col += (fbm(vec2(x * 0.9, s * 0.5)) - 0.5) * 0.06;
   float sp = pow(noise(vec2(x * 4.0 + uTime * 0.7, s * 2.2)), 14.0);
   col += sp * 1.2 * (0.2 + 0.8 * df);
+  // 太陽の反射光路（画面右奥から手前に伸びるきらめき帯）
+  float glintPath = exp(-pow((x - (z * 0.11 + 2.4)) * 0.55, 2.0));
+  float glintSparkle = pow(noise(vec2(x * 6.0 + uTime * 1.1, s * 3.0)), 6.0);
+  col += glintPath * glintSparkle * 0.85 * (0.35 + 0.65 * df);
   float foam = 0.0;
   for (int i = -1; i <= 1; i++) {
     float lx = float(i) * 2.3;
@@ -607,8 +633,9 @@ function FoamRing({ r }: { r: number }) {
 }
 
 function Rock({ seed }: { seed: number }) {
+  // detail=2（旧: 1）で角を減らし、低ポリ丸出し感を抑える
   const geo = useMemo(() => {
-    const g = new THREE.IcosahedronGeometry(0.85, 1);
+    const g = new THREE.IcosahedronGeometry(0.85, 2);
     const pos = g.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
       const k = 1 + Math.sin(seed * 1000 + i * 37.7) * 0.18;
@@ -624,11 +651,24 @@ function Rock({ seed }: { seed: number }) {
   }, [seed]);
   return (
     <group>
-      <mesh geometry={geo} position={[0, 0.05, 0]} rotation={[0, seed * 6, 0]}>
-        <meshStandardMaterial color="#48535e" roughness={0.95} flatShading />
+      {/* 接地影（半透明バグの実体＝影が無く水に浮いて見えていたための対策） */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[1.05, 20]} />
+        <meshBasicMaterial color="#02182c" transparent opacity={0.32} depthWrite={false} />
+      </mesh>
+      {/* side=DoubleSide: 変形後のジオメトリで法線が反転した面があっても
+          背面カリングで穴が空いて透けて見えないようにする */}
+      <mesh geometry={geo} position={[0, 0.05, 0]} rotation={[0, seed * 6, 0]} castShadow>
+        <meshStandardMaterial
+          color="#3c4650" roughness={0.88} metalness={0.04}
+          flatShading side={THREE.DoubleSide}
+        />
       </mesh>
       <mesh geometry={geo} position={[0.55, -0.15, 0.3]} scale={0.5} rotation={[0, seed * 9, 0]}>
-        <meshStandardMaterial color="#3d4750" roughness={0.95} flatShading />
+        <meshStandardMaterial
+          color="#333c45" roughness={0.88} metalness={0.04}
+          flatShading side={THREE.DoubleSide}
+        />
       </mesh>
       <FoamRing r={1.15} />
     </group>
@@ -784,9 +824,21 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
     s.bezierCurveTo(0.19, 0.5, 0.12, 0.72, 0, 0.72);
     s.bezierCurveTo(-0.12, 0.72, -0.19, 0.5, -0.2, 0.15);
     s.bezierCurveTo(-0.21, -0.2, -0.14, -0.7, 0, -0.85);
+    // 厚みを増して立体感を強調（旧0.07→0.11）
     const g = new THREE.ExtrudeGeometry(s, {
-      depth: 0.07, bevelEnabled: true, bevelSize: 0.025, bevelThickness: 0.02, bevelSegments: 2,
+      depth: 0.11, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.025, bevelSegments: 3,
     });
+    g.rotateX(Math.PI / 2);
+    return g;
+  }, []);
+  const railGeo = useMemo(() => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -0.85);
+    s.bezierCurveTo(0.14, -0.7, 0.21, -0.2, 0.2, 0.15);
+    s.bezierCurveTo(0.19, 0.5, 0.12, 0.72, 0, 0.72);
+    s.bezierCurveTo(-0.12, 0.72, -0.19, 0.5, -0.2, 0.15);
+    s.bezierCurveTo(-0.21, -0.2, -0.14, -0.7, 0, -0.85);
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.05, bevelEnabled: false });
     g.rotateX(Math.PI / 2);
     return g;
   }, []);
@@ -812,39 +864,47 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
 
   return (
     <group ref={groupRef}>
-      <BlobShadow r={0.55} />
+      <BlobShadow r={0.6} />
       <group ref={boardRef}>
-        <mesh geometry={boardGeo} position={[0, 0.12, 0]}>
-          <meshStandardMaterial color={board.color} roughness={0.35} />
+        {/* レール（縁）: 本体よりわずかに大きく下にずらし、厚み・エッジを強調 */}
+        <mesh geometry={railGeo} position={[0, 0.08, 0]} scale={[1.05, 1, 1.04]}>
+          <meshStandardMaterial color="#e7dfc8" roughness={0.55} />
+        </mesh>
+        <mesh geometry={boardGeo} position={[0, 0.13, 0]} castShadow>
+          <meshPhysicalMaterial
+            color={board.color} roughness={0.22} clearcoat={0.55} clearcoatRoughness={0.25}
+          />
         </mesh>
         {patternTex && (
-          <mesh geometry={stripeGeo} position={[0, 0.155, 0]}>
-            <meshStandardMaterial color="#ffffff" map={patternTex} roughness={0.4} />
+          <mesh geometry={stripeGeo} position={[0, 0.185, 0]}>
+            <meshPhysicalMaterial
+              color="#ffffff" map={patternTex} roughness={0.28} clearcoat={0.5} clearcoatRoughness={0.3}
+            />
           </mesh>
         )}
         {boltTex && (
-          <sprite position={[0, 0.2, 0.1]} scale={[0.4, 0.4, 1]}>
+          <sprite position={[0, 0.23, 0.1]} scale={[0.4, 0.4, 1]}>
             <spriteMaterial map={boltTex} transparent depthWrite={false} />
           </sprite>
         )}
-        <group ref={bodyRef} position={[0, 0.16, 0.1]}>
+        <group ref={bodyRef} position={[0, 0.19, 0.1]}>
           {/* legs */}
           <mesh position={[-0.1, 0.18, 0.02]} rotation={[0.18, 0, 0.08]}>
             <capsuleGeometry args={[0.05, 0.26, 4, 8]} />
-            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.6} />
           </mesh>
           <mesh position={[0.1, 0.18, -0.05]} rotation={[-0.15, 0, -0.08]}>
             <capsuleGeometry args={[0.05, 0.26, 4, 8]} />
-            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.6} />
           </mesh>
           {/* feet */}
           <mesh position={[-0.11, 0.02, 0.06]} scale={[1, 0.5, 1.7]}>
             <sphereGeometry args={[0.055, 8, 6]} />
-            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.6} />
           </mesh>
           <mesh position={[0.11, 0.02, -0.08]} scale={[1, 0.5, 1.7]}>
             <sphereGeometry args={[0.055, 8, 6]} />
-            <meshStandardMaterial color={SKIN_DARK} roughness={0.7} />
+            <meshStandardMaterial color={SKIN_DARK} roughness={0.6} />
           </mesh>
           {/* board shorts */}
           <mesh position={[0, 0.38, -0.01]}>
@@ -859,50 +919,53 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
             <cylinderGeometry args={[0.062, 0.068, 0.1, 8]} />
             <meshStandardMaterial color="#e05f1f" roughness={0.7} />
           </mesh>
-          {/* torso */}
-          <mesh position={[0, 0.6, 0]}>
-            <capsuleGeometry args={[0.115, 0.24, 4, 12]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          {/* torso: 少し細めのウエスト〜広めの肩でアスリート体型に */}
+          <mesh position={[0, 0.6, 0]} scale={[1, 1, 0.95]}>
+            <capsuleGeometry args={[0.115, 0.25, 4, 12]} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          {/* arms: spread nearly horizontal for balance */}
-          <mesh position={[-0.23, 0.7, 0]} rotation={[0, 0, 1.35]}>
-            <capsuleGeometry args={[0.04, 0.2, 4, 8]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          {/* arms: バランスを取る自然な広げ角度（旧より少し前・少し下げる） */}
+          <mesh position={[-0.25, 0.68, 0.02]} rotation={[0.15, 0, 1.22]}>
+            <capsuleGeometry args={[0.042, 0.21, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          <mesh position={[0.23, 0.7, 0]} rotation={[0, 0, -1.35]}>
-            <capsuleGeometry args={[0.04, 0.2, 4, 8]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          <mesh position={[0.25, 0.68, 0.02]} rotation={[0.15, 0, -1.22]}>
+            <capsuleGeometry args={[0.042, 0.21, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          <mesh position={[-0.41, 0.73, 0]} rotation={[0, 0, 1.1]}>
-            <capsuleGeometry args={[0.035, 0.16, 4, 8]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          <mesh position={[-0.43, 0.71, 0.05]} rotation={[0.1, 0, 1.0]}>
+            <capsuleGeometry args={[0.036, 0.17, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          <mesh position={[0.41, 0.73, 0]} rotation={[0, 0, -1.1]}>
-            <capsuleGeometry args={[0.035, 0.16, 4, 8]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+          <mesh position={[0.43, 0.71, 0.05]} rotation={[0.1, 0, -1.0]}>
+            <capsuleGeometry args={[0.036, 0.17, 4, 8]} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          <mesh position={[-0.5, 0.76, 0]}>
+          <mesh position={[-0.52, 0.75, 0.08]}>
             <sphereGeometry args={[0.05, 8, 6]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          <mesh position={[0.5, 0.76, 0]}>
+          <mesh position={[0.52, 0.75, 0.08]}>
             <sphereGeometry args={[0.05, 8, 6]} />
-            <meshStandardMaterial color={SKIN} roughness={0.65} />
+            <meshStandardMaterial color={SKIN} roughness={0.55} />
           </mesh>
-          {/* head + hair */}
-          <mesh position={[0, 0.86, 0]}>
-            <sphereGeometry args={[0.105, 16, 12]} />
-            <meshStandardMaterial color={SKIN} roughness={0.6} />
+          {/* head + hair：頭をわずかに大きく、髪を増量してブロック感を減らす */}
+          <mesh position={[0, 0.865, 0]}>
+            <sphereGeometry args={[0.112, 20, 16]} />
+            <meshStandardMaterial color={SKIN} roughness={0.5} />
           </mesh>
-          <mesh position={[0, 0.895, -0.01]} scale={[1.06, 0.82, 1.06]}>
-            <sphereGeometry args={[0.105, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
-            <meshStandardMaterial color="#5f3d1f" roughness={0.8} />
+          <mesh position={[0, 0.9, -0.01]} scale={[1.08, 0.85, 1.1]}>
+            <sphereGeometry args={[0.112, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.64]} />
+            <meshStandardMaterial color="#4a2f18" roughness={0.7} />
           </mesh>
-          {([[-0.03, 0.985, 0.02, 0.3], [0.02, 1.0, -0.01, -0.2], [0.06, 0.975, 0.01, 0.5]] as const).map(
+          {([
+            [-0.04, 0.995, 0.03, 0.35], [0.03, 1.01, 0.0, -0.25], [0.07, 0.985, 0.02, 0.55],
+            [-0.08, 0.975, -0.02, 0.15], [0.0, 1.015, -0.03, -0.05],
+          ] as const).map(
             ([x, y, z, r], i) => (
               <mesh key={i} position={[x, y, z]} rotation={[0, 0, r]}>
-                <coneGeometry args={[0.028, 0.07, 5]} />
-                <meshStandardMaterial color="#6b4423" roughness={0.8} />
+                <coneGeometry args={[0.026, 0.075, 5]} />
+                <meshStandardMaterial color="#5c3a1e" roughness={0.75} />
               </mesh>
             )
           )}
@@ -941,6 +1004,17 @@ function Spray({ dataRef }: { dataRef: React.RefObject<Float32Array> }) {
         depthWrite={false} sizeAttenuation color="#ffffff"
       />
     </points>
+  );
+}
+
+// ---------- sun ----------
+
+function Sun() {
+  const tex = useMemo(() => sunTexture(), []);
+  return (
+    <sprite position={[9, 16, -60]} scale={[26, 26, 1]}>
+      <spriteMaterial map={tex} transparent depthWrite={false} />
+    </sprite>
   );
 }
 
@@ -1056,6 +1130,21 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       d[i * 6 + 4] = rnd(0.8, 2.6) * alive;
       d[i * 6 + 5] = rnd(1.5, 4.5) * alive;
     }
+    // ヒット時（シールド破壊・ワイプアウト）の派手な水しぶきバースト
+    if (st.hitBurst && st.time - st.hitBurst.at < 0.12) {
+      for (let s = 0; s < 10; s++) {
+        const i = sprayIdx.current;
+        sprayIdx.current = (sprayIdx.current + 1) % SPRAY_N;
+        const angle = rnd(0, Math.PI * 2);
+        const speed = rnd(2.2, 4.5);
+        d[i * 6] = st.hitBurst.x + Math.cos(angle) * 0.1;
+        d[i * 6 + 1] = rnd(0.1, 0.4);
+        d[i * 6 + 2] = rnd(-0.3, 0.3);
+        d[i * 6 + 3] = Math.cos(angle) * speed;
+        d[i * 6 + 4] = rnd(2.5, 4.5);
+        d[i * 6 + 5] = Math.sin(angle) * speed;
+      }
+    }
     for (let i = 0; i < SPRAY_N; i++) {
       d[i * 6] += d[i * 6 + 3] * dt;
       d[i * 6 + 1] += d[i * 6 + 4] * dt;
@@ -1089,11 +1178,12 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       waterMat.current.uniforms.uTurbo.value = !idle && st.turboT > 0 ? 1 : 0;
     }
     if (idle) {
-      camera.position.set(Math.sin(st.time * 0.15) * 1.4, 3.6, 6.6);
-      camera.lookAt(0, 0.4, -16);
+      camera.position.set(Math.sin(st.time * 0.15) * 1.4, 3.2, 6.0);
+      camera.lookAt(0, 0.3, -16);
     } else {
-      camera.position.set(px * 0.45, 3.4, 6.2);
-      camera.lookAt(px * 0.6, 0.25, -14);
+      // 低め・近めのカメラで疾走感と奥行きを強調
+      camera.position.set(px * 0.4, 2.7, 5.0);
+      camera.lookAt(px * 0.55, 0.15, -15);
     }
 
     // HUD
@@ -1124,10 +1214,11 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
 
   return (
     <>
-      <fog attach="fog" args={["#c9ecfa", 40, 95]} />
-      <ambientLight intensity={0.85} />
+      <fog attach="fog" args={["#c9ecfa", 46, 110]} />
+      <ambientLight intensity={0.78} />
       <hemisphereLight args={["#bfe9ff", "#1f97e0", 0.5]} />
-      <directionalLight position={[6, 12, 5]} intensity={1.6} color="#fff6e0" />
+      <directionalLight position={[6, 12, 5]} intensity={1.7} color="#fff6e0" />
+      <Sun />
 
       {/* sky dome */}
       <mesh>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene, initState, BEST_KEY, type GS, type Hud, type Kind } from "@/lib/engine";
 import { hasSeenSwipeHint, markSwipeHintSeen, type BoardConfig } from "@/lib/boards";
+import AnimatedNumber from "./AnimatedNumber";
 import styles from "./SurfGame.module.css";
 
 const POWER_LABEL: Partial<Record<Kind, string>> = {
@@ -92,12 +93,22 @@ export default function SurfGame({
   const pickupLabel = hud.pickup ? POWER_LABEL[hud.pickup] : null;
   const pickupIcon = hud.pickup ? POWER_ICON[hud.pickup] : null;
 
+  // ゲームオーバー背景の水しぶき（衝突演出）。over遷移時に一度だけ位置を決める。
+  const splashDrops = useMemo(() => {
+    if (!hud.over) return [];
+    return Array.from({ length: 14 }, (_, i) => ({
+      left: 6 + ((i * 37) % 90),
+      delay: (i % 7) * 0.05,
+      duration: 0.7 + (i % 4) * 0.15,
+    }));
+  }, [hud.over]);
+
   return (
     <div className={styles.wrap}>
       <div className={styles.stage} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
         <Canvas
           className={styles.canvas}
-          dpr={[1, 2]}
+          dpr={[1, 1.5]}
           camera={{ fov: 60, near: 0.1, far: 400, position: [0, 3.1, 5.4] }}
           gl={{ antialias: true }}
         >
@@ -110,19 +121,8 @@ export default function SurfGame({
           <div className={styles.topRow}>
             <div className={styles.score}>
               <div className={styles.scoreLabel}>SHELLS</div>
-              <div className={styles.scoreMain}>{hud.score}</div>
+              <div className={styles.scoreMain}><AnimatedNumber value={hud.score} /></div>
               <div className={styles.scoreBest}>BEST {bestShown}</div>
-            </div>
-            <div className={styles.centerTop}>
-              <div className={styles.waveMeter}>
-                <span className={styles.waveIcon}>🌊</span>
-                <span className={styles.waveTrack}>
-                  <span
-                    className={styles.waveFill}
-                    style={{ width: `${18 + hud.progress * 68}%` }}
-                  />
-                </span>
-              </div>
             </div>
             <div className={styles.rightCol}>
               <div className={`${styles.pill} ${styles.pillLevel}`}>
@@ -132,6 +132,18 @@ export default function SurfGame({
               {hud.magnet > 0 && <div className={`${styles.pill} ${styles.pillMagnet}`}>🧲 MAGNET {hud.magnet}s</div>}
               {hud.shield && <div className={`${styles.pill} ${styles.pillShield}`}>🛡️ SHIELD</div>}
               {hud.slow > 0 && <div className={`${styles.pill} ${styles.pillSlow}`}>🌊 SLOW {hud.slow}s</div>}
+            </div>
+          </div>
+
+          <div className={styles.centerTop}>
+            <div className={styles.waveMeter}>
+              <span className={styles.waveIcon}>🌊</span>
+              <span className={styles.waveTrack}>
+                <span
+                  className={styles.waveFill}
+                  style={{ width: `${18 + hud.progress * 68}%` }}
+                />
+              </span>
             </div>
           </div>
 
@@ -167,11 +179,18 @@ export default function SurfGame({
 
           {hud.over && (
             <div className={styles.overlay}>
+              {splashDrops.map((d, i) => (
+                <span
+                  key={i}
+                  className={styles.splashDrop}
+                  style={{ left: `${d.left}%`, animationDelay: `${d.delay}s`, animationDuration: `${d.duration}s` }}
+                />
+              ))}
               <div className={styles.card}>
                 <div className={styles.cardTitle}>WIPEOUT!</div>
                 <div className={styles.cardEmoji}>🏄🌊</div>
                 <div className={styles.cardScoreLabel}>FINAL SCORE</div>
-                <div className={styles.cardScore}>{hud.score}</div>
+                <div className={styles.cardScore}><AnimatedNumber value={hud.score} /></div>
                 <div className={styles.cardBest}>BEST {bestShown}</div>
                 {hud.newBest && <div className={styles.newBest}>🎉 NEW BEST!</div>}
                 <button className={styles.restart} onClick={restart}>🔄 RESTART</button>

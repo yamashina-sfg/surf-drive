@@ -14,6 +14,7 @@
   padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px
     calc(env(safe-area-inset-bottom, 0px) + 24px);
   color: #fff;
+  animation: screenFadeIn 0.4s ease both;
 }
 
 .header {
@@ -95,9 +96,13 @@
 }
 
 .gotIt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-top: 18px;
   width: 100%;
-  padding: 16px;
+  min-height: 56px;
+  padding: 0 16px;
   border: none;
   border-radius: 18px;
   background: linear-gradient(180deg, #ffe45e 0%, #ffc400 60%, #f5a400 100%);
@@ -112,4 +117,9 @@
 .gotIt:active {
   transform: translateY(3px);
   box-shadow: 0 3px 0 #c98a00, 0 6px 14px rgba(0, 20, 45, 0.35);
+}
+
+@keyframes screenFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }

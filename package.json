@@ -20,6 +20,8 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/three": "^0.180.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^15.5.20",
     "typescript": "^5.8.0"
   }
 }
