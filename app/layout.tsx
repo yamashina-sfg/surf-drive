@@ -1,5 +1,13 @@
 import type { Metadata, Viewport } from "next";
+import { Baloo_2 } from "next/font/google";
 import "./globals.css";
+
+const baloo = Baloo_2({
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  variable: "--font-game",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Surf Drive — Endless Surfing Runner",
@@ -20,7 +28,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={baloo.variable}>
       <body>{children}</body>
     </html>
   );

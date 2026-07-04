@@ -1,0 +1,241 @@
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 20, 40, 0.78) 0%, rgba(4, 20, 40, 0.62) 100%);
+  z-index: 1;
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px
+    calc(env(safe-area-inset-bottom, 0px) + 22px);
+  color: #fff;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.headerSpacer {
+  width: 40px;
+}
+
+.backBtn {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-size: clamp(17px, 5cqw, 22px);
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-shadow: 0 3px 10px rgba(0, 20, 45, 0.5);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(10, 35, 58, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 22px rgba(0, 15, 35, 0.32);
+  text-align: left;
+  cursor: pointer;
+  color: #fff;
+  transition: border-color 0.15s ease, transform 0.08s ease;
+}
+
+.card:active {
+  transform: scale(0.985);
+}
+
+.cardSelected {
+  border-color: #ffd60a;
+  box-shadow: 0 0 0 2px rgba(255, 214, 10, 0.55), 0 10px 26px rgba(0, 15, 35, 0.4);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.preview {
+  --board-color: #f7efdc;
+  --stripe-color: #f28a1e;
+  position: relative;
+  width: 46px;
+  height: 84px;
+  flex: 0 0 auto;
+  border-radius: 50% 50% 45% 45% / 30% 30% 22% 22%;
+  background: var(--board-color);
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.12), inset 0 4px 6px rgba(255, 255, 255, 0.5),
+    0 4px 10px rgba(0, 10, 25, 0.35);
+  overflow: hidden;
+}
+
+.previewStripe {
+  position: absolute;
+  left: 50%;
+  top: 8%;
+  bottom: 8%;
+  width: 30%;
+  transform: translateX(-50%);
+  background: var(--stripe-color);
+  border-radius: 999px;
+}
+
+.pattern_solid .previewStripe {
+  display: none;
+}
+
+.pattern_wave .previewStripe {
+  width: 90%;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--stripe-color) 0 6px,
+    transparent 6px 16px
+  );
+  border-radius: 40%;
+}
+
+.pattern_bolt .previewStripe {
+  width: 46%;
+  clip-path: polygon(60% 0%, 20% 55%, 45% 55%, 35% 100%, 80% 40%, 52% 40%);
+  background: var(--stripe-color);
+}
+
+.pattern_sunset .previewStripe {
+  width: 100%;
+  background: linear-gradient(180deg, var(--stripe-color) 0%, transparent 75%);
+  border-radius: 0;
+}
+
+.rarity {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.rarity_Common {
+  background: rgba(255, 255, 255, 0.18);
+  color: #e7f3ff;
+}
+
+.rarity_Rare {
+  background: rgba(59, 168, 255, 0.28);
+  color: #bfe3ff;
+}
+
+.rarity_Epic {
+  background: rgba(178, 102, 255, 0.28);
+  color: #e3cfff;
+}
+
+.rarity_Legendary {
+  background: rgba(255, 196, 0, 0.25);
+  color: #ffe083;
+}
+
+.cardName {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.statLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+  width: 62px;
+  flex: 0 0 auto;
+}
+
+.statDots {
+  display: flex;
+  gap: 4px;
+}
+
+.dotFilled,
+.dotEmpty {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dotFilled {
+  background: #53e4ff;
+  box-shadow: 0 0 6px rgba(83, 228, 255, 0.7);
+}
+
+.dotEmpty {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.selectTag {
+  margin-top: 4px;
+  padding: 9px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.cardSelected .selectTag {
+  background: linear-gradient(180deg, #ffe45e, #ffc400);
+  color: #10233a;
+}
+
+@container (min-width: 380px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

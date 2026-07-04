@@ -1,5 +1,5 @@
-import SurfGame from "@/components/SurfGame";
+import GameApp from "@/components/GameApp";
 
 export default function Home() {
-  return <SurfGame />;
+  return <GameApp />;
 }

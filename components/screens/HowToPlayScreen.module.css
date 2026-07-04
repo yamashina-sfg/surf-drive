@@ -1,0 +1,115 @@
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 20, 40, 0.78) 0%, rgba(4, 20, 40, 0.68) 100%);
+  z-index: 1;
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px
+    calc(env(safe-area-inset-bottom, 0px) + 24px);
+  color: #fff;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.headerSpacer {
+  width: 40px;
+}
+
+.backBtn {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-size: clamp(17px, 5cqw, 22px);
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-shadow: 0 3px 10px rgba(0, 20, 45, 0.5);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(10, 35, 58, 0.5);
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.stepIcon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 20px;
+}
+
+.stepTitle {
+  font-size: 15px;
+  font-weight: 800;
+  margin-bottom: 3px;
+}
+
+.stepBody {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.gotIt {
+  margin-top: 18px;
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffe45e 0%, #ffc400 60%, #f5a400 100%);
+  color: #0c3a56;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 6px 0 #c98a00, 0 12px 24px rgba(0, 20, 45, 0.35);
+}
+
+.gotIt:active {
+  transform: translateY(3px);
+  box-shadow: 0 3px 0 #c98a00, 0 6px 14px rgba(0, 20, 45, 0.35);
+}

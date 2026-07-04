@@ -1,0 +1,118 @@
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 20, 40, 0.55) 0%,
+    rgba(5, 25, 48, 0.15) 32%,
+    rgba(5, 25, 48, 0.35) 68%,
+    rgba(4, 18, 36, 0.82) 100%
+  );
+  z-index: 1;
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 56px) 28px
+    calc(env(safe-area-inset-bottom, 0px) + 40px);
+  color: #fff;
+  text-align: center;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-shadow: 0 4px 18px rgba(0, 20, 45, 0.55);
+}
+
+.eyebrow {
+  font-size: clamp(12px, 3.2cqw, 15px);
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(44px, 13cqw, 68px);
+  font-weight: 800;
+  letter-spacing: 1px;
+  line-height: 1;
+  background: linear-gradient(180deg, #ffffff 0%, #d9f2ff 60%, #9fdcff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 6px 0 rgba(4, 60, 100, 0.35));
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: clamp(15px, 4cqw, 19px);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 17px 20px;
+  border: none;
+  border-radius: 18px;
+  font-size: clamp(16px, 4.6cqw, 20px);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.15s ease;
+}
+
+.btn:active {
+  transform: translateY(3px) scale(0.99);
+}
+
+.btnIcon {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.btnPrimary {
+  color: #0c3a56;
+  background: linear-gradient(180deg, #ffe45e 0%, #ffc400 60%, #f5a400 100%);
+  box-shadow: 0 6px 0 #c98a00, 0 14px 28px rgba(0, 20, 45, 0.4),
+    inset 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+
+.btnSecondary {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(0, 20, 45, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.btnGhost {
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(8, 30, 52, 0.32);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}

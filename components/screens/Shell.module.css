@@ -1,0 +1,21 @@
+/* 全画面（スタート／ボード選択／遊び方／ゲーム）共通の「スマホ縦画面」枠。 */
+.wrap {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.45), transparent 28%),
+    linear-gradient(180deg, #1198e4 0%, #65cff5 36%, #006fae 100%);
+}
+
+.stage {
+  position: relative;
+  width: min(100vw, calc(100dvh * 0.587));
+  height: 100dvh;
+  overflow: hidden;
+  container-type: inline-size;
+  background: #0a8dd2;
+  box-shadow: 0 0 70px rgba(0, 30, 70, 0.45);
+}
