@@ -56,7 +56,11 @@ export default function SurfGame({
       markSwipeHintSeen();
       return;
     }
-    st.playerLane = Math.max(-1, Math.min(1, st.playerLane + dir));
+    const nextLane = Math.max(-1, Math.min(1, st.playerLane + dir));
+    if (nextLane !== st.playerLane) {
+      st.laneCarve = { dir, from: st.playerLane, to: nextLane, at: st.time };
+      st.playerLane = nextLane;
+    }
     if (showHint) {
       setShowHint(false);
       markSwipeHintSeen();

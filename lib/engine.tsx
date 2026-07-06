@@ -46,6 +46,13 @@ export interface Ring {
   color: string;
 }
 
+export interface LaneCarve {
+  dir: -1 | 1;
+  from: number;
+  to: number;
+  at: number;
+}
+
 export interface GS {
   started: boolean;
   over: boolean;
@@ -69,6 +76,7 @@ export interface GS {
   levelUpFlashAt: number; // st.time のタイムスタンプ。0以下なら非表示
   pickupBanner: { kind: Kind; at: number } | null;
   hitBurst: { x: number; at: number } | null;
+  laneCarve: LaneCarve | null;
 }
 
 export interface Hud {
@@ -136,6 +144,7 @@ export function initState(): GS {
     levelUpFlashAt: -1,
     pickupBanner: null,
     hitBurst: null,
+    laneCarve: null,
   };
   // pre-populate side scenery so the water isn't empty on load
   for (let z = 8; z < SPAWN_Z; z += DECO_GAP) {
@@ -204,6 +213,7 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
   st.rings.forEach((p) => (p.t += dt * 2.2));
   st.rings = st.rings.filter((p) => p.t < 1);
   st.time += dt;
+  if (st.laneCarve && st.time - st.laneCarve.at > 0.7) st.laneCarve = null;
   if (st.over || !st.started) return;
 
   const prevLevel = st.level;
@@ -570,6 +580,52 @@ function ringTexture(): THREE.Texture {
   g.stroke();
   const t = new THREE.CanvasTexture(c);
   texCache.set("ring", t);
+  return t;
+}
+
+function carveFoamTexture(): THREE.Texture {
+  const hit = texCache.get("carve-foam");
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.clearRect(0, 0, 256, 128);
+
+  const glow = g.createRadialGradient(130, 72, 8, 130, 72, 112);
+  glow.addColorStop(0, "rgba(156,240,255,0.52)");
+  glow.addColorStop(0.48, "rgba(98,220,255,0.22)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 256, 128);
+
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.strokeStyle = "rgba(255,255,255,0.92)";
+  g.lineWidth = 12;
+  g.beginPath();
+  g.moveTo(22, 94);
+  g.bezierCurveTo(78, 34, 150, 26, 234, 50);
+  g.stroke();
+
+  g.strokeStyle = "rgba(211,251,255,0.72)";
+  g.lineWidth = 6;
+  g.beginPath();
+  g.moveTo(36, 105);
+  g.bezierCurveTo(86, 70, 144, 62, 218, 78);
+  g.stroke();
+
+  g.fillStyle = "rgba(255,255,255,0.9)";
+  for (let i = 0; i < 18; i++) {
+    const x = 34 + i * 12 + rnd(-4, 4);
+    const y = 82 + Math.sin(i * 0.7) * 18 + rnd(-3, 3);
+    g.beginPath();
+    g.arc(x, y, rnd(1.5, 4.2), 0, Math.PI * 2);
+    g.fill();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  texCache.set("carve-foam", t);
   return t;
 }
 
@@ -1225,6 +1281,8 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
   const sprayIdx = useRef(0);
   const ringRefs = useRef<(THREE.Sprite | null)[]>([]);
   const ringTex = useMemo(() => ringTexture(), []);
+  const carveRefs = useRef<(THREE.Sprite | null)[]>([]);
+  const carveTex = useMemo(() => carveFoamTexture(), []);
 
   const waterUniforms = useMemo(
     () => ({ uTime: { value: 0 }, uScroll: { value: 0 }, uPlayerX: { value: 0 }, uTurbo: { value: 0 } }),
@@ -1266,16 +1324,21 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
     // player
     const px = idle ? Math.sin(st.time * 0.4) * 0.5 : st.playerPos * LANE_X;
     const tilt = idle ? 0 : st.playerLane - st.playerPos;
+    const carveAge = st.laneCarve ? st.time - st.laneCarve.at : 99;
+    const carveLife = Math.max(0, 1 - carveAge / 0.44);
+    const carveKick = !idle && st.laneCarve && carveLife > 0
+      ? st.laneCarve.dir * Math.sin(carveLife * Math.PI) * 0.34
+      : 0;
     if (playerRef.current) {
       playerRef.current.position.set(px, Math.sin(st.time * 3.1) * 0.05, 0);
       playerRef.current.visible = !(st.invulnT > 0 && Math.floor(st.time * 10) % 2 === 0);
     }
     if (boardRef.current) {
-      boardRef.current.rotation.z = -tilt * 0.55;
-      boardRef.current.rotation.y = -tilt * 0.35;
-      boardRef.current.rotation.x = Math.sin(st.time * 2.2) * 0.045 - 0.02;
+      boardRef.current.rotation.z = -tilt * 0.55 - carveKick;
+      boardRef.current.rotation.y = -tilt * 0.35 - carveKick * 0.55;
+      boardRef.current.rotation.x = Math.sin(st.time * 2.2) * 0.045 - 0.02 - Math.abs(carveKick) * 0.22;
     }
-    if (bodyRef.current) bodyRef.current.rotation.z = -tilt * 0.35;
+    if (bodyRef.current) bodyRef.current.rotation.z = -tilt * 0.35 - carveKick * 0.52;
     if (shieldRef.current) {
       shieldRef.current.visible = st.shield;
       shieldRef.current.position.set(px, 0.55, 0);
@@ -1294,6 +1357,20 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       d[i * 6 + 3] = rnd(-0.8, 0.8);
       d[i * 6 + 4] = rnd(0.8, 2.6) * alive;
       d[i * 6 + 5] = rnd(1.5, 4.5) * alive;
+    }
+    if (!idle && st.laneCarve && carveLife > 0) {
+      const intensity = st.turboT > 0 ? 13 : 9;
+      for (let s = 0; s < intensity; s++) {
+        const i = sprayIdx.current;
+        sprayIdx.current = (sprayIdx.current + 1) % SPRAY_N;
+        const side = -st.laneCarve.dir;
+        d[i * 6] = px + side * rnd(0.16, 0.62);
+        d[i * 6 + 1] = rnd(0.06, 0.2);
+        d[i * 6 + 2] = rnd(0.2, 1.05);
+        d[i * 6 + 3] = side * rnd(1.4, 4.1) * carveLife;
+        d[i * 6 + 4] = rnd(1.2, 3.7) * carveLife;
+        d[i * 6 + 5] = rnd(2.4, 6.0);
+      }
     }
     // ヒット時（シールド破壊・ワイプアウト）の派手な水しぶきバースト
     if (st.hitBurst && st.time - st.hitBurst.at < 0.12) {
@@ -1330,6 +1407,23 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
         spr.scale.set(sc, sc, 1);
         (spr.material as THREE.SpriteMaterial).opacity = 1 - r.t;
         (spr.material as THREE.SpriteMaterial).color.set(r.color);
+      } else {
+        spr.visible = false;
+      }
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const spr = carveRefs.current[i];
+      if (!spr) continue;
+      if (!idle && st.laneCarve && carveLife > 0) {
+        const p = Math.min(1, carveAge / 0.44);
+        const laneBlend = st.laneCarve.from + (st.laneCarve.to - st.laneCarve.from) * Math.min(1, p * 1.45);
+        const side = -st.laneCarve.dir;
+        spr.visible = true;
+        spr.position.set(laneBlend * LANE_X + side * (0.34 + i * 0.18), 0.055 + i * 0.012, 0.42 + i * 0.22);
+        spr.rotation.set(-Math.PI / 2, 0, side * (0.46 + i * 0.08));
+        spr.scale.set(1.3 + i * 0.36 + p * 0.8, 0.38 + i * 0.06, 1);
+        (spr.material as THREE.SpriteMaterial).opacity = carveLife * (0.74 - i * 0.11);
       } else {
         spr.visible = false;
       }
@@ -1424,6 +1518,19 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       </mesh>
 
       <Spray dataRef={spray} />
+
+      {/* carve foam shown for a short moment after each lane-change swipe */}
+      {Array.from({ length: 4 }).map((_, i) => (
+        <sprite key={i} ref={(s) => { carveRefs.current[i] = s; }} visible={false}>
+          <spriteMaterial
+            map={carveTex}
+            transparent
+            depthWrite={false}
+            depthTest={false}
+            color={i === 0 ? "#ffffff" : "#c9fbff"}
+          />
+        </sprite>
+      ))}
 
       {/* collect ring pool */}
       {Array.from({ length: 6 }).map((_, i) => (
