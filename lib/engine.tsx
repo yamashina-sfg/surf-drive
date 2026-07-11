@@ -66,6 +66,7 @@ export interface GS {
   level: number;
   playerLane: number;
   playerPos: number;
+  jumpT: number;
   turboT: number;
   magnetT: number;
   slowT: number;
@@ -111,6 +112,13 @@ export const COLLECTIBLES: Kind[] = ["fish", "fish2", "shell", "star"];
 export const POWERUPS: Kind[] = ["turbo", "magnet", "shield", "slow"];
 export const VALUE: Partial<Record<Kind, number>> = { fish: 1, fish2: 1, shell: 2, star: 3 };
 export const BEST_KEY = "surf-drive-best";
+export const JUMP_DURATION = 0.82;
+
+export function jumpHeight(jumpT: number): number {
+  if (jumpT <= 0) return 0;
+  const progress = 1 - jumpT / JUMP_DURATION;
+  return Math.sin(Math.min(1, Math.max(0, progress)) * Math.PI) * 1.12;
+}
 
 export type DifficultyTier = "easy" | "medium" | "hard" | "extreme";
 type PatternRow = {
@@ -217,6 +225,7 @@ export function initState(): GS {
     level: 1,
     playerLane: 0,
     playerPos: 0,
+    jumpT: 0,
     turboT: 0,
     magnetT: 0,
     slowT: 0,
@@ -321,6 +330,7 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
   st.magnetT = Math.max(0, st.magnetT - dt);
   st.slowT = Math.max(0, st.slowT - dt);
   st.invulnT = Math.max(0, st.invulnT - dt);
+  st.jumpT = Math.max(0, st.jumpT - dt);
 
   const dz = speed * dt;
   st.dist += dz;
@@ -378,6 +388,8 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
         st.pickupBanner = { kind: o.kind, at: st.time };
         st.rings.push({ x, z: 0, t: 0, color: "#7ce0ff" });
         alive = false;
+      } else if (o.kind === "wood" && jumpHeight(st.jumpT) > 0.34) {
+        // 上スワイプのジャンプで飛び越えられるのは丸太だけ。
       } else if (st.invulnT <= 0) {
         if (st.shield) {
           st.shield = false;
@@ -1505,6 +1517,8 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
 
     // player
     const px = idle ? Math.sin(st.time * 0.4) * 0.5 : st.playerPos * LANE_X;
+    const jumpY = idle ? 0 : jumpHeight(st.jumpT);
+    const jumpProgress = st.jumpT > 0 ? 1 - st.jumpT / JUMP_DURATION : 0;
     const tilt = idle ? 0 : st.playerLane - st.playerPos;
     const carveAge = st.laneCarve ? st.time - st.laneCarve.at : 99;
     const carveLife = Math.max(0, 1 - carveAge / 0.44);
@@ -1512,13 +1526,14 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       ? st.laneCarve.dir * Math.sin(carveLife * Math.PI) * 0.34
       : 0;
     if (playerRef.current) {
-      playerRef.current.position.set(px, Math.sin(st.time * 3.1) * 0.05, 0);
+      playerRef.current.position.set(px, Math.sin(st.time * 3.1) * 0.05 + jumpY, 0);
       playerRef.current.visible = !(st.invulnT > 0 && Math.floor(st.time * 10) % 2 === 0);
     }
     if (boardRef.current) {
       boardRef.current.rotation.z = -tilt * 0.55 - carveKick;
       boardRef.current.rotation.y = -tilt * 0.35 - carveKick * 0.55;
-      boardRef.current.rotation.x = Math.sin(st.time * 2.2) * 0.045 - 0.02 - Math.abs(carveKick) * 0.22;
+      const jumpPitch = st.jumpT > 0 ? Math.sin(jumpProgress * Math.PI * 2) * 0.16 : 0;
+      boardRef.current.rotation.x = Math.sin(st.time * 2.2) * 0.045 - 0.02 - Math.abs(carveKick) * 0.22 + jumpPitch;
     }
     if (bodyRef.current) bodyRef.current.rotation.z = -tilt * 0.35 - carveKick * 0.52;
     if (shieldRef.current) {

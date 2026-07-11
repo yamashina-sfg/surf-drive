@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Scene, initState, BEST_KEY, type GS, type Hud, type Kind } from "@/lib/engine";
+import { Scene, initState, BEST_KEY, JUMP_DURATION, type GS, type Hud, type Kind } from "@/lib/engine";
 import { hasSeenSwipeHint, markSwipeHintSeen, type BoardConfig } from "@/lib/boards";
 import AnimatedNumber from "./AnimatedNumber";
 import GameIcon, { type GameIconName } from "./GameIcons";
@@ -79,10 +79,29 @@ export default function SurfGame({
     }
   };
 
+  const jump = () => {
+    const st = stRef.current;
+    if (st.over) return;
+    if (!st.started) {
+      st.started = true;
+      st.countdownT = 3.65;
+      setShowHint(false);
+      markSwipeHintSeen();
+      return;
+    }
+    if (st.countdownT > 0 || st.jumpT > 0) return;
+    st.jumpT = JUMP_DURATION;
+    if (showHint) {
+      setShowHint(false);
+      markSwipeHintSeen();
+    }
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft" || e.key === "a") move(-1);
       else if (e.key === "ArrowRight" || e.key === "d") move(1);
+      else if (e.key === "ArrowUp" || e.key === "w" || e.key === " ") jump();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -90,19 +109,45 @@ export default function SurfGame({
   }, []);
 
   const px0 = useRef(0);
+  const py0 = useRef(0);
   const pDown = useRef(false);
   const onPointerDown = (e: React.PointerEvent) => {
     px0.current = e.clientX;
+    py0.current = e.clientY;
     pDown.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic/test pointer events may not have an active native pointer.
+    }
   };
   const onPointerUp = (e: React.PointerEvent) => {
     if (!pDown.current) return;
     pDown.current = false;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Pointer may already have been released by the browser.
+    }
     const dx = e.clientX - px0.current;
-    if (Math.abs(dx) > 24) move(dx > 0 ? 1 : -1);
+    const dy = e.clientY - py0.current;
+    if (dy < -28 && Math.abs(dy) > Math.abs(dx) * 0.75) jump();
+    else if (Math.abs(dx) > 24) move(dx > 0 ? 1 : -1);
     else {
       const bounds = e.currentTarget.getBoundingClientRect();
       move(e.clientX > bounds.left + bounds.width / 2 ? 1 : -1);
+    }
+  };
+  const onPointerCancel = (e: React.PointerEvent) => {
+    pDown.current = false;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Pointer may already have been released by the browser.
     }
   };
 
@@ -122,7 +167,12 @@ export default function SurfGame({
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.stage} onPointerDown={onPointerDown} onPointerUp={onPointerUp}>
+      <div
+        className={styles.stage}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
         <Canvas
           className={styles.canvas}
           dpr={[1, 1.5]}
@@ -211,7 +261,7 @@ export default function SurfGame({
                   <GameIcon name="arrowRight" />
                 </div>
                 <div>SWIPE LEFT / RIGHT</div>
-                <div className={styles.hintSub}>to change lanes</div>
+                <div className={styles.hintSub}>change lanes · swipe up to jump logs</div>
               </div>
             </div>
           )}
