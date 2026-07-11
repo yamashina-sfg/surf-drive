@@ -1143,7 +1143,7 @@ function ImportedSurfer() {
     <primitive
       object={model}
       position={[0, 0.64, 0.04]}
-      rotation={[0, Math.PI, 0]}
+      rotation={[0, Math.PI / 2, 0]}
       scale={1.18}
     />
   );
