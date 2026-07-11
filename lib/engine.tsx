@@ -8,6 +8,7 @@
 import { Suspense, useMemo, useRef, useState } from "react";
 import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { BoardConfig } from "./boards";
 
@@ -1175,6 +1176,51 @@ function ItemSprite({ kind }: { kind: Kind }) {
   );
 }
 
+function TurboCollectible() {
+  const fbx = useLoader(FBXLoader, "/models/lightning-bolt-icons.fbx");
+  const bolt = useMemo(() => {
+    const source = fbx.getObjectByName("Extrude") ?? fbx;
+    const clone = source.clone(true);
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.material = new THREE.MeshPhysicalMaterial({
+          color: "#ffd31a",
+          emissive: "#ff9d00",
+          emissiveIntensity: 0.75,
+          roughness: 0.22,
+          metalness: 0.08,
+          clearcoat: 0.85,
+          clearcoatRoughness: 0.18,
+        });
+      }
+    });
+    return clone;
+  }, [fbx]);
+
+  return (
+    <group>
+      <mesh position={[0, 0.88, -0.08]} scale={[0.72, 0.92, 0.24]}>
+        <sphereGeometry args={[1, 24, 18]} />
+        <meshBasicMaterial
+          color="#68dfff"
+          transparent
+          opacity={0.2}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <primitive
+        object={bolt}
+        position={[-0.075, 0.873, 0.035]}
+        scale={0.00335}
+      />
+      <pointLight position={[0, 0.9, 0.45]} color="#ffcf33" intensity={1.5} distance={4} />
+      <BlobShadow r={0.46} />
+    </group>
+  );
+}
+
 function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) => void }) {
   let body: React.ReactNode;
   switch (o.kind) {
@@ -1185,6 +1231,7 @@ function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) 
     case "fin": body = <SharkFin />; break;
     case "jelly": body = <Jelly />; break;
     case "shell": body = <ShellCollectible />; break;
+    case "turbo": body = <TurboCollectible />; break;
     case "palm": body = <Palm seed={o.seed} />; break;
     case "island": body = <Island seed={o.seed} />; break;
     default: body = <ItemSprite kind={o.kind} />;
