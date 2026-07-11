@@ -57,13 +57,27 @@
 }
 
 .speedLinesTurbo {
-  opacity: 0.34;
-  animation: speedPulse 0.5s ease-in-out infinite;
+  opacity: 0.62;
+  animation: speedPulse 0.3s ease-in-out infinite;
 }
 
 @keyframes speedPulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.42; }
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.72; }
+}
+
+.turboWash {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border: clamp(5px, 1.5cqw, 10px) solid rgba(255, 224, 72, 0.3);
+  box-shadow: inset 0 0 55px rgba(56, 220, 255, 0.34);
+  animation: turboWash 0.28s ease-in-out infinite alternate;
+}
+
+@keyframes turboWash {
+  to { border-color: rgba(255, 244, 136, 0.55); box-shadow: inset 0 0 75px rgba(88, 234, 255, 0.5); }
 }
 
 .hud {
@@ -240,6 +254,18 @@
   color: #fff;
 }
 
+.multiplier {
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(4, 28, 52, 0.72);
+  color: #bff5ff;
+  font-size: clamp(8px, 2.1cqw, 11px);
+  font-weight: 850;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
 .centerTop {
   display: flex;
   justify-content: center;
@@ -356,6 +382,33 @@
   font-weight: 700;
   color: #fff;
   text-shadow: 0 2px 8px rgba(0, 20, 45, 0.6);
+}
+
+.countdown {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: clamp(86px, 25cqw, 150px);
+  font-weight: 950;
+  line-height: 1;
+  text-shadow: 0 7px 0 rgba(0, 71, 132, 0.52), 0 0 36px rgba(112, 228, 255, 0.82);
+  animation: countdownPop 0.95s ease-out infinite;
+  pointer-events: none;
+}
+
+.countdownSurf {
+  color: #ffe35a;
+  font-size: clamp(58px, 17cqw, 100px);
+  text-shadow: 0 7px 0 rgba(159, 93, 0, 0.62), 0 0 42px rgba(255, 225, 66, 0.9);
+}
+
+@keyframes countdownPop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(1.45); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
 }
 
 @keyframes levelUpPop {

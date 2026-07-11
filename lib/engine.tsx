@@ -55,6 +55,7 @@ export interface LaneCarve {
 
 export interface GS {
   started: boolean;
+  countdownT: number;
   over: boolean;
   time: number;
   dist: number;
@@ -77,6 +78,8 @@ export interface GS {
   pickupBanner: { kind: Kind; at: number } | null;
   hitBurst: { x: number; at: number } | null;
   laneCarve: LaneCarve | null;
+  patternQueue: PatternRow[];
+  lastSafeLane: number;
 }
 
 export interface Hud {
@@ -92,19 +95,99 @@ export interface Hud {
   progress: number;
   levelUp: boolean;
   pickup: Kind | null;
+  countdown: "3" | "2" | "1" | "SURF!" | null;
+  speedFactor: number;
+  scoreMultiplier: number;
 }
 
 // ---------- constants ----------
 
 export const LANE_X = 2.3;
-export const SPAWN_Z = 78;
-export const ROW_GAP = 12;
+export const SPAWN_Z = 62;
 export const DECO_GAP = 7;
 export const OBSTACLES: Kind[] = ["rock", "wood", "crate", "buoy", "fin", "jelly"];
 export const COLLECTIBLES: Kind[] = ["fish", "fish2", "shell", "star"];
 export const POWERUPS: Kind[] = ["turbo", "magnet", "shield", "slow"];
 export const VALUE: Partial<Record<Kind, number>> = { fish: 1, fish2: 1, shell: 2, star: 3 };
 export const BEST_KEY = "surf-drive-best";
+
+export type DifficultyTier = "easy" | "medium" | "hard" | "extreme";
+type PatternRow = {
+  safeLane: number;
+  obstacles: number[];
+  collectibleLane?: number;
+  powerup?: Kind;
+};
+
+type ObstaclePattern = {
+  name: string;
+  tier: DifficultyTier;
+  rows: PatternRow[];
+};
+
+const LEVEL_STARTS = [0, 15, 30, 48, 68, 90, 114, 140, 168, 198, 230, 264, 300, 338, 378];
+const SPEED_FACTORS = [1, 1.18, 1.38, 1.62, 1.9, 2.2, 2.5, 2.82, 3.12, 3.4, 3.66, 3.9, 4.12, 4.32, 4.5];
+const SCORE_FACTORS = [1, 1.2, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5];
+
+const PATTERNS: ObstaclePattern[] = [
+  { name: "A-center-gate", tier: "easy", rows: [{ safeLane: 0, obstacles: [-1, 1], collectibleLane: 0 }] },
+  { name: "B-left-gate", tier: "easy", rows: [{ safeLane: -1, obstacles: [0, 1], collectibleLane: -1 }] },
+  { name: "C-right-gate", tier: "easy", rows: [{ safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 }] },
+  { name: "D-center-to-right", tier: "medium", rows: [
+    { safeLane: 0, obstacles: [-1, 1], collectibleLane: 0 },
+    { safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 },
+  ] },
+  { name: "E-baited-item-line", tier: "medium", rows: [
+    { safeLane: -1, obstacles: [1], collectibleLane: 0 },
+    { safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 },
+  ] },
+  { name: "F-switchback", tier: "hard", rows: [
+    { safeLane: -1, obstacles: [0, 1], collectibleLane: -1 },
+    { safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 },
+    { safeLane: -1, obstacles: [0, 1], collectibleLane: -1 },
+  ] },
+  { name: "G-feint", tier: "hard", rows: [
+    { safeLane: 0, obstacles: [-1], collectibleLane: 1 },
+    { safeLane: 0, obstacles: [-1, 1], collectibleLane: 0 },
+    { safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 },
+  ] },
+  { name: "Extreme-slalom", tier: "extreme", rows: [
+    { safeLane: -1, obstacles: [0, 1], collectibleLane: -1 },
+    { safeLane: 0, obstacles: [-1, 1], collectibleLane: 0 },
+    { safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 },
+    { safeLane: 0, obstacles: [-1, 1], collectibleLane: 0 },
+  ] },
+  { name: "Extreme-power-risk", tier: "extreme", rows: [
+    { safeLane: 1, obstacles: [-1, 0], powerup: "turbo" },
+    { safeLane: -1, obstacles: [0, 1], collectibleLane: -1 },
+    { safeLane: 1, obstacles: [-1, 0], collectibleLane: 1 },
+  ] },
+];
+
+export function levelAt(time: number): number {
+  let level = 1;
+  while (level < LEVEL_STARTS.length && time >= LEVEL_STARTS[level]) level++;
+  return level;
+}
+
+export function speedFactorForLevel(level: number): number {
+  return SPEED_FACTORS[Math.min(SPEED_FACTORS.length, Math.max(1, level)) - 1];
+}
+
+export function scoreFactorForLevel(level: number): number {
+  return SCORE_FACTORS[Math.min(SCORE_FACTORS.length, Math.max(1, level)) - 1];
+}
+
+function tierForLevel(level: number): DifficultyTier {
+  if (level <= 2) return "easy";
+  if (level <= 4) return "medium";
+  if (level <= 6) return "hard";
+  return "extreme";
+}
+
+function rowGapForLevel(level: number): number {
+  return Math.max(7.8, 11.8 - (level - 1) * 0.48);
+}
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -123,6 +206,7 @@ function makeScenery(st: GS, z: number): Obj {
 export function initState(): GS {
   const st: GS = {
     started: false,
+    countdownT: 0,
     over: false,
     time: 0,
     dist: 0,
@@ -145,6 +229,8 @@ export function initState(): GS {
     pickupBanner: null,
     hitBurst: null,
     laneCarve: null,
+    patternQueue: [],
+    lastSafeLane: 0,
   };
   // pre-populate side scenery so the water isn't empty on load
   for (let z = 8; z < SPAWN_Z; z += DECO_GAP) {
@@ -173,37 +259,37 @@ export function initState(): GS {
 }
 
 function spawnRow(st: GS) {
-  const r = Math.random();
-  if (r < 0.55) {
-    const lanes = [-1, 0, 1].sort(() => Math.random() - 0.5);
-    // レベルが上がっても同時に塞ぐレーンは最大2つまで＝必ず1レーンは通れる
-    const count = st.level >= 3 && Math.random() < 0.55 ? 2 : 1;
-    for (let i = 0; i < count; i++) {
-      st.objs.push({
-        id: st.nextId++, kind: pick(OBSTACLES), lane: lanes[i],
-        z: SPAWN_Z, bob: rnd(0, Math.PI * 2), seed: Math.random(),
-      });
-    }
-    if (Math.random() < 0.5) {
-      st.objs.push({
-        id: st.nextId++, kind: pick(COLLECTIBLES), lane: lanes[2],
-        z: SPAWN_Z + rnd(0, 4), bob: rnd(0, Math.PI * 2), seed: Math.random(),
-      });
-    }
-  } else if (r < 0.88) {
-    const lane = pick([-1, 0, 1]);
-    const kind = pick(COLLECTIBLES);
-    const n = 3 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < n; i++) {
-      st.objs.push({
-        id: st.nextId++, kind: Math.random() < 0.75 ? kind : pick(COLLECTIBLES),
-        lane, z: SPAWN_Z + i * 3.1, bob: rnd(0, Math.PI * 2), seed: Math.random(),
-      });
-    }
-  } else {
+  if (st.patternQueue.length === 0) {
+    const tier = tierForLevel(st.level);
+    const allowed: DifficultyTier[] = tier === "easy" ? ["easy"]
+      : tier === "medium" ? ["easy", "medium"]
+        : tier === "hard" ? ["medium", "hard"] : ["hard", "extreme"];
+    const pattern = pick(PATTERNS.filter((candidate) => allowed.includes(candidate.tier)));
+    st.patternQueue = pattern.rows.map((row) => ({ ...row, obstacles: [...row.obstacles] }));
+  }
+
+  const row = st.patternQueue.shift()!;
+  st.lastSafeLane = row.safeLane;
+  row.obstacles.slice(0, 2).forEach((lane) => {
     st.objs.push({
-      id: st.nextId++, kind: pick(POWERUPS), lane: pick([-1, 0, 1]),
+      id: st.nextId++, kind: pick(OBSTACLES), lane,
       z: SPAWN_Z, bob: rnd(0, Math.PI * 2), seed: Math.random(),
+    });
+  });
+  if (row.powerup) {
+    st.objs.push({
+      id: st.nextId++, kind: row.powerup, lane: row.safeLane,
+      z: SPAWN_Z + 1.2, bob: rnd(0, Math.PI * 2), seed: Math.random(),
+    });
+  } else if (row.collectibleLane !== undefined) {
+    st.objs.push({
+      id: st.nextId++, kind: pick(COLLECTIBLES), lane: row.collectibleLane,
+      z: SPAWN_Z + 1.2, bob: rnd(0, Math.PI * 2), seed: Math.random(),
+    });
+  } else if (Math.random() < 0.12) {
+    st.objs.push({
+      id: st.nextId++, kind: pick(POWERUPS), lane: row.safeLane,
+      z: SPAWN_Z + 1.2, bob: rnd(0, Math.PI * 2), seed: Math.random(),
     });
   }
   st.rev++;
@@ -212,17 +298,22 @@ function spawnRow(st: GS) {
 export function update(st: GS, dt: number, best: { v: number }, board: BoardConfig) {
   st.rings.forEach((p) => (p.t += dt * 2.2));
   st.rings = st.rings.filter((p) => p.t < 1);
-  st.time += dt;
   if (st.laneCarve && st.time - st.laneCarve.at > 0.7) st.laneCarve = null;
   if (st.over || !st.started) return;
 
+  if (st.countdownT > 0) {
+    st.countdownT = Math.max(0, st.countdownT - dt);
+    return;
+  }
+  st.time += dt;
+
   const prevLevel = st.level;
-  st.level = Math.min(15, 1 + Math.floor(st.time / 18));
+  st.level = levelAt(st.time);
   if (st.level > prevLevel) st.levelUpFlashAt = st.time;
 
-  // ボードのSpeedステータス（1-5）で基礎速度をわずかに増減させる（最大±7%）
-  let speed = (9 + st.level * 0.7) * (1 + (board.speed - 3) * 0.035);
-  if (st.turboT > 0) speed *= 1.5;
+  // ボードのSpeedステータス（1-5）で基礎速度をわずかに増減させる（最大±5%）
+  let speed = 12.4 * speedFactorForLevel(st.level) * (1 + (board.speed - 3) * 0.025);
+  if (st.turboT > 0) speed *= 1.82;
   if (st.slowT > 0) speed *= 0.55;
 
   st.turboT = Math.max(0, st.turboT - dt);
@@ -235,8 +326,9 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
   st.rowDist += dz;
   st.decoDist += dz;
 
-  if (st.rowDist >= ROW_GAP) {
-    st.rowDist = 0;
+  const rowGap = rowGapForLevel(st.level);
+  if (st.rowDist >= rowGap) {
+    st.rowDist -= rowGap;
     spawnRow(st);
   }
   if (st.decoDist >= DECO_GAP) {
@@ -246,10 +338,10 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
   }
 
   // ボードのHandlingステータス（1-5）でレーン移動の追従の速さが変わる
-  const handlingRate = 7 + board.handling * 0.9;
+  const handlingRate = 10.2 + board.handling * 1.05;
   st.playerPos += (st.playerLane - st.playerPos) * Math.min(1, dt * handlingRate);
 
-  const mult = st.turboT > 0 ? 2 : 1;
+  const mult = scoreFactorForLevel(st.level) * (st.turboT > 0 ? 2 : 1);
   // ボードのMagnet Rangeステータス（1-5）で吸引範囲と吸引の速さが変わる
   const magnetRangeZ = 10 + board.magnetRange * 2.4;
   const magnetPull = 4 + board.magnetRange * 1.2;
@@ -297,9 +389,10 @@ export function update(st: GS, dt: number, best: { v: number }, board: BoardConf
           st.over = true;
           st.rings.push({ x, z: 0, t: 0, color: "#ffffff" });
           st.hitBurst = { x, at: st.time };
-          if (st.score > best.v) {
-            best.v = st.score;
-            localStorage.setItem(BEST_KEY, String(st.score));
+          const finalScore = Math.floor(st.score);
+          if (finalScore > best.v) {
+            best.v = finalScore;
+            localStorage.setItem(BEST_KEY, String(finalScore));
           }
         }
       }
@@ -1198,7 +1291,7 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
 
 // ---------- spray particles ----------
 
-const SPRAY_N = 90;
+const SPRAY_N = 140;
 
 function Spray({ dataRef }: { dataRef: React.RefObject<Float32Array> }) {
   const geoRef = useRef<THREE.BufferGeometry>(null);
@@ -1298,6 +1391,7 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
     const dt = Math.min(0.05, delta);
     const st = stRef.current;
     const best = bestRef.current;
+    if (idle) st.time += dt;
     update(st, dt, best, board);
 
     if (st.rev !== lastRev.current) {
@@ -1348,7 +1442,8 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
     // spray
     const alive = st.started && !st.over ? 1 : 0.25;
     const d = spray.current;
-    for (let s = 0; s < 3; s++) {
+    const baseSpray = !idle && st.turboT > 0 ? 8 : 3;
+    for (let s = 0; s < baseSpray; s++) {
       const i = sprayIdx.current;
       sprayIdx.current = (sprayIdx.current + 1) % SPRAY_N;
       d[i * 6] = px + rnd(-0.25, 0.25);
@@ -1359,7 +1454,7 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       d[i * 6 + 5] = rnd(1.5, 4.5) * alive;
     }
     if (!idle && st.laneCarve && carveLife > 0) {
-      const intensity = st.turboT > 0 ? 13 : 9;
+      const intensity = st.turboT > 0 ? 22 : 11;
       for (let s = 0; s < intensity; s++) {
         const i = sprayIdx.current;
         sprayIdx.current = (sprayIdx.current + 1) % SPRAY_N;
@@ -1440,15 +1535,25 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
       camera.position.set(Math.sin(st.time * 0.15) * 1.4, 3.2, 6.0);
       camera.lookAt(0, 0.3, -16);
     } else {
-      // 低め・近めのカメラで疾走感と奥行きを強調
-      camera.position.set(px * 0.4, 2.7, 5.0);
+      const turbo = st.turboT > 0;
+      const shake = turbo ? 0.035 : 0;
+      camera.position.set(
+        px * 0.4 + Math.sin(st.time * 43) * shake,
+        2.7 + Math.cos(st.time * 37) * shake,
+        5.0 + Math.sin(st.time * 31) * shake,
+      );
       camera.lookAt(px * 0.55, 0.15, -15);
+      if (camera instanceof THREE.PerspectiveCamera) {
+        const targetFov = turbo ? 72 : 60;
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 7);
+        camera.updateProjectionMatrix();
+      }
     }
 
     // HUD
     if (onHud) {
       const next: Hud = {
-        score: st.score,
+        score: Math.floor(st.score),
         best: best.v,
         level: st.level,
         turbo: Math.ceil(st.turboT),
@@ -1458,8 +1563,11 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
         over: st.over,
         newBest: st.over && st.score > 0 && st.score >= best.v,
         progress: (st.dist % 160) / 160,
-        levelUp: st.time - st.levelUpFlashAt < 1.8,
+        levelUp: st.levelUpFlashAt >= 0 && st.time - st.levelUpFlashAt < 1.8,
         pickup: st.pickupBanner && st.time - st.pickupBanner.at < 1.6 ? st.pickupBanner.kind : null,
+        countdown: st.countdownT > 3 ? "3" : st.countdownT > 2 ? "2" : st.countdownT > 1 ? "1" : st.countdownT > 0 ? "SURF!" : null,
+        speedFactor: speedFactorForLevel(st.level),
+        scoreMultiplier: scoreFactorForLevel(st.level) * (st.turboT > 0 ? 2 : 1),
       };
       const json = JSON.stringify(next);
       if (json !== hudJson.current) {

@@ -35,12 +35,22 @@ export default function SurfGame({
   const [hud, setHud] = useState<Hud>({
     score: 0, best: 0, level: 1, turbo: 0, magnet: 0, slow: 0,
     shield: false, over: false, newBest: false, progress: 0, levelUp: false, pickup: null,
+    countdown: null, speedFactor: 1, scoreMultiplier: 1,
   });
   const [showHint, setShowHint] = useState(true);
 
   useEffect(() => {
     bestRef.current.v = Number(localStorage.getItem(BEST_KEY) || 0);
     setShowHint(!hasSeenSwipeHint());
+  }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const debugWindow = window as Window & { __surfDriveState?: React.RefObject<GS> };
+    debugWindow.__surfDriveState = stRef;
+    return () => {
+      delete debugWindow.__surfDriveState;
+    };
   }, []);
 
   const restart = () => {
@@ -52,10 +62,12 @@ export default function SurfGame({
     if (st.over) return;
     if (!st.started) {
       st.started = true;
+      st.countdownT = 3.65;
       setShowHint(false);
       markSwipeHintSeen();
       return;
     }
+    if (st.countdownT > 0) return;
     const nextLane = Math.max(-1, Math.min(1, st.playerLane + dir));
     if (nextLane !== st.playerLane) {
       st.laneCarve = { dir, from: st.playerLane, to: nextLane, at: st.time };
@@ -121,6 +133,7 @@ export default function SurfGame({
         </Canvas>
 
         <div className={`${styles.speedLines} ${hud.turbo > 0 ? styles.speedLinesTurbo : ""}`} />
+        {hud.turbo > 0 && <div className={styles.turboWash} />}
 
         <div className={styles.hud}>
           <div className={styles.topRow}>
@@ -144,6 +157,7 @@ export default function SurfGame({
                 <GameIcon name="level" />
                 <span>LEVEL {hud.level}</span>
               </div>
+              <div className={styles.multiplier}>SPEED ×{hud.speedFactor.toFixed(2)} · SCORE ×{hud.scoreMultiplier.toFixed(1)}</div>
               {hud.turbo > 0 && <div className={`${styles.pill} ${styles.pillTurbo}`}><GameIcon name="turbo" /> TURBO {hud.turbo}s</div>}
               {hud.magnet > 0 && <div className={`${styles.pill} ${styles.pillMagnet}`}><GameIcon name="magnet" /> MAGNET {hud.magnet}s</div>}
               {hud.shield && <div className={`${styles.pill} ${styles.pillShield}`}><GameIcon name="shield" /> SHIELD</div>}
@@ -171,7 +185,13 @@ export default function SurfGame({
           {hud.levelUp && (
             <div className={styles.levelUpToast}>
               <span className={styles.levelUpBig}>LEVEL {hud.level}</span>
-              <span className={styles.levelUpSub}>Speed increasing!</span>
+              <span className={styles.levelUpSub}>SPEED UP</span>
+            </div>
+          )}
+
+          {hud.countdown && (
+            <div className={`${styles.countdown} ${hud.countdown === "SURF!" ? styles.countdownSurf : ""}`}>
+              {hud.countdown}
             </div>
           )}
 
