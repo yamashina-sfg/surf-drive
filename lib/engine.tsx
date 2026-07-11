@@ -1221,6 +1221,53 @@ function TurboCollectible() {
   );
 }
 
+function FishCollectible({ variant }: { variant: "blue" | "gold" }) {
+  const gltf = useLoader(GLTFLoader, "/models/shiny-fish.glb");
+  const fish = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    const gold = variant === "gold";
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.material = new THREE.MeshPhysicalMaterial({
+          color: gold ? "#ff9f1c" : "#24c9ff",
+          emissive: gold ? "#c84e00" : "#007fbd",
+          emissiveIntensity: 0.32,
+          roughness: 0.2,
+          metalness: 0.12,
+          clearcoat: 0.9,
+          clearcoatRoughness: 0.15,
+        });
+      }
+    });
+    return clone;
+  }, [gltf.scene, variant]);
+
+  const glowColor = variant === "gold" ? "#ffbd45" : "#75eaff";
+  return (
+    <group>
+      <mesh position={[0, 0.72, -0.08]} scale={[0.9, 0.62, 0.3]}>
+        <sphereGeometry args={[1, 24, 16]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.14}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <primitive
+        object={fish}
+        position={[0.11, 0.66, -0.04]}
+        rotation={[0, Math.PI / 2, 0]}
+        scale={0.16}
+      />
+      <pointLight position={[0, 0.72, 0.3]} color={glowColor} intensity={0.7} distance={2.8} />
+      <BlobShadow r={0.4} />
+    </group>
+  );
+}
+
 function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) => void }) {
   let body: React.ReactNode;
   switch (o.kind) {
@@ -1230,6 +1277,8 @@ function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) 
     case "buoy": body = <Buoy />; break;
     case "fin": body = <SharkFin />; break;
     case "jelly": body = <Jelly />; break;
+    case "fish": body = <FishCollectible variant="blue" />; break;
+    case "fish2": body = <FishCollectible variant="gold" />; break;
     case "shell": body = <ShellCollectible />; break;
     case "turbo": body = <TurboCollectible />; break;
     case "palm": body = <Palm seed={o.seed} />; break;
