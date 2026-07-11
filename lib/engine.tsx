@@ -961,34 +961,31 @@ function FoamRing({ r }: { r: number }) {
 }
 
 function Rock({ seed }: { seed: number }) {
-  const geo = useMemo(() => {
-    const g = new THREE.SphereGeometry(0.86, 28, 20);
-    const pos = g.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      const z = pos.getZ(i);
-      const broadNoise = Math.sin(x * 4.1 + seed * 13) * Math.cos(z * 3.7 - seed * 9);
-      const fineNoise = Math.sin((x + y + z) * 8.3 + seed * 21);
-      const k = 1 + broadNoise * 0.09 + fineNoise * 0.025;
-      pos.setXYZ(
-        i,
-        x * k,
-        y * k * 0.72,
-        z * k * 0.92
-      );
-    }
-    g.computeVertexNormals();
-    return g;
-  }, [seed]);
+  const gltf = useLoader(GLTFLoader, "/models/stone.glb");
+  const stone = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        child.material = new THREE.MeshStandardMaterial({
+          color: seed > 0.5 ? "#59636b" : "#46515a",
+          roughness: 0.94,
+          metalness: 0.015,
+        });
+      }
+    });
+    return clone;
+  }, [gltf.scene, seed]);
+
   return (
     <group>
-      <mesh geometry={geo} position={[0, 0.43, 0]} rotation={[0, seed * 6, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color="#46515b" roughness={0.94} metalness={0.02} />
-      </mesh>
-      <mesh geometry={geo} position={[0.56, 0.2, 0.28]} scale={0.5} rotation={[0, seed * 9, 0]} castShadow>
-        <meshStandardMaterial color="#343e47" roughness={0.96} metalness={0.01} />
-      </mesh>
+      <primitive
+        object={stone}
+        position={[0, 0.59, 0]}
+        rotation={[0, seed * Math.PI * 2, (seed - 0.5) * 0.08]}
+        scale={[0.0072 * (0.94 + seed * 0.12), 0.0072, 0.0072 * (1.05 - seed * 0.1)]}
+      />
       <FoamRing r={1.15} />
     </group>
   );
