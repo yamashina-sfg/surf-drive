@@ -948,17 +948,21 @@ function FoamRing({ r }: { r: number }) {
 }
 
 function Rock({ seed }: { seed: number }) {
-  // detail=2（旧: 1）で角を減らし、低ポリ丸出し感を抑える
   const geo = useMemo(() => {
-    const g = new THREE.IcosahedronGeometry(0.85, 2);
+    const g = new THREE.SphereGeometry(0.86, 28, 20);
     const pos = g.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
-      const k = 1 + Math.sin(seed * 1000 + i * 37.7) * 0.18;
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const broadNoise = Math.sin(x * 4.1 + seed * 13) * Math.cos(z * 3.7 - seed * 9);
+      const fineNoise = Math.sin((x + y + z) * 8.3 + seed * 21);
+      const k = 1 + broadNoise * 0.09 + fineNoise * 0.025;
       pos.setXYZ(
         i,
-        pos.getX(i) * k,
-        pos.getY(i) * (0.75 + 0.2 * Math.sin(i * 3 + seed * 20)),
-        pos.getZ(i) * k
+        x * k,
+        y * k * 0.72,
+        z * k * 0.92
       );
     }
     g.computeVertexNormals();
@@ -966,24 +970,11 @@ function Rock({ seed }: { seed: number }) {
   }, [seed]);
   return (
     <group>
-      {/* 接地影（半透明バグの実体＝影が無く水に浮いて見えていたための対策） */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[1.05, 20]} />
-        <meshBasicMaterial color="#02182c" transparent opacity={0.32} depthWrite={false} />
+      <mesh geometry={geo} position={[0, 0.43, 0]} rotation={[0, seed * 6, 0]} castShadow receiveShadow>
+        <meshStandardMaterial color="#46515b" roughness={0.94} metalness={0.02} />
       </mesh>
-      {/* side=DoubleSide: 変形後のジオメトリで法線が反転した面があっても
-          背面カリングで穴が空いて透けて見えないようにする */}
-      <mesh geometry={geo} position={[0, 0.05, 0]} rotation={[0, seed * 6, 0]} castShadow>
-        <meshStandardMaterial
-          color="#3c4650" roughness={0.88} metalness={0.04}
-          flatShading side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh geometry={geo} position={[0.55, -0.15, 0.3]} scale={0.5} rotation={[0, seed * 9, 0]}>
-        <meshStandardMaterial
-          color="#333c45" roughness={0.88} metalness={0.04}
-          flatShading side={THREE.DoubleSide}
-        />
+      <mesh geometry={geo} position={[0.56, 0.2, 0.28]} scale={0.5} rotation={[0, seed * 9, 0]} castShadow>
+        <meshStandardMaterial color="#343e47" roughness={0.96} metalness={0.01} />
       </mesh>
       <FoamRing r={1.15} />
     </group>
@@ -1042,20 +1033,87 @@ function Buoy() {
 function SharkFin() {
   const geo = useMemo(() => {
     const s = new THREE.Shape();
-    s.moveTo(-0.45, 0);
-    s.quadraticCurveTo(-0.2, 0.55, 0.02, 0.95);
-    s.quadraticCurveTo(0.28, 0.55, 0.5, 0.05);
+    s.moveTo(-0.4, 0);
+    s.quadraticCurveTo(-0.16, 0.5, 0.02, 0.92);
+    s.quadraticCurveTo(0.18, 0.54, 0.42, 0.06);
     s.closePath();
     return new THREE.ExtrudeGeometry(s, {
-      depth: 0.14, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 2,
+      depth: 0.18, bevelEnabled: true, bevelSize: 0.045, bevelThickness: 0.04, bevelSegments: 4,
     });
   }, []);
   return (
     <group>
-      <mesh geometry={geo} position={[0, 0, -0.07]}>
-        <meshStandardMaterial color="#4f6272" roughness={0.5} />
+      <mesh position={[0, 0.18, 0]} scale={[0.62, 0.32, 1.25]} castShadow>
+        <sphereGeometry args={[1, 28, 18]} />
+        <meshStandardMaterial color="#536979" roughness={0.58} metalness={0.03} />
       </mesh>
-      <FoamRing r={0.7} />
+      <mesh geometry={geo} position={[-0.09, 0.25, -0.12]} rotation={[0, Math.PI / 2, 0]} castShadow>
+        <meshStandardMaterial color="#405564" roughness={0.56} />
+      </mesh>
+      {[-0.24, 0.24].map((x) => (
+        <group key={x} position={[x, 0.34, 0.92]}>
+          <mesh>
+            <sphereGeometry args={[0.07, 14, 10]} />
+            <meshStandardMaterial color="#eefbff" roughness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.01, 0.055]}>
+            <sphereGeometry args={[0.032, 12, 8]} />
+            <meshStandardMaterial color="#06131d" roughness={0.25} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, 0.18, -1.08]} rotation={[0, 0, Math.PI / 2]} scale={[0.8, 1, 0.5]}>
+        <coneGeometry args={[0.38, 0.75, 4]} />
+        <meshStandardMaterial color="#405564" roughness={0.6} />
+      </mesh>
+      <FoamRing r={1.05} />
+    </group>
+  );
+}
+
+function ShellCollectible() {
+  const shellGeo = useMemo(() => {
+    const s = new THREE.Shape();
+    s.moveTo(0, -0.38);
+    s.bezierCurveTo(-0.42, -0.28, -0.52, 0.2, -0.34, 0.46);
+    s.bezierCurveTo(-0.16, 0.68, 0.16, 0.68, 0.34, 0.46);
+    s.bezierCurveTo(0.52, 0.2, 0.42, -0.28, 0, -0.38);
+    return new THREE.ExtrudeGeometry(s, {
+      depth: 0.16,
+      bevelEnabled: true,
+      bevelSize: 0.045,
+      bevelThickness: 0.04,
+      bevelSegments: 4,
+      curveSegments: 18,
+    });
+  }, []);
+  return (
+    <group position={[0, 0.72, 0]} scale={1.05}>
+      <mesh geometry={shellGeo} position={[0, 0, -0.08]} castShadow>
+        <meshPhysicalMaterial
+          color="#b96ff2"
+          roughness={0.24}
+          metalness={0.02}
+          clearcoat={0.72}
+          clearcoatRoughness={0.2}
+        />
+      </mesh>
+      {[-0.3, -0.15, 0, 0.15, 0.3].map((r, i) => (
+        <mesh key={r} position={[r * 0.38, 0.08, 0.145]} rotation={[0, 0, -r]}>
+          <capsuleGeometry args={[0.018, 0.58 - Math.abs(r) * 0.35, 5, 10]} />
+          <meshStandardMaterial
+            color={i % 2 ? "#f3c7ff" : "#ffffff"}
+            emissive="#dba6ff"
+            emissiveIntensity={0.2}
+            roughness={0.3}
+          />
+        </mesh>
+      ))}
+      <mesh position={[0, -0.28, 0.18]}>
+        <sphereGeometry args={[0.085, 18, 12]} />
+        <meshPhysicalMaterial color="#fff8ff" roughness={0.1} clearcoat={1} />
+      </mesh>
+      <BlobShadow r={0.42} />
     </group>
   );
 }
@@ -1114,6 +1172,7 @@ function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) 
     case "buoy": body = <Buoy />; break;
     case "fin": body = <SharkFin />; break;
     case "jelly": body = <Jelly />; break;
+    case "shell": body = <ShellCollectible />; break;
     case "palm": body = <Palm seed={o.seed} />; break;
     case "island": body = <Island seed={o.seed} />; break;
     default: body = <ItemSprite kind={o.kind} />;
