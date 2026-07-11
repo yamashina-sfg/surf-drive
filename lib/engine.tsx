@@ -5,9 +5,10 @@
 // ゲーム状態・スポーン・水/空シェーダー・3Dメッシュ・Sceneコンポーネントをここに集約する。
 // SurfGame（実プレイ画面）と IdleBackdrop（メニュー背景）の両方から利用する。
 
-import { useMemo, useRef, useState } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useMemo, useRef, useState } from "react";
+import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { BoardConfig } from "./boards";
 
 // ---------- types ----------
@@ -1125,6 +1126,29 @@ function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) 
 const SKIN = "#d99a62";
 const SKIN_DARK = "#c4854a";
 
+function ImportedSurfer() {
+  const gltf = useLoader(GLTFLoader, "/models/stylized-surfer.glb");
+  const model = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    return clone;
+  }, [gltf.scene]);
+
+  return (
+    <primitive
+      object={model}
+      position={[0, 0.64, 0.04]}
+      rotation={[0, Math.PI, 0]}
+      scale={1.18}
+    />
+  );
+}
+
 function Surfer({ groupRef, boardRef, bodyRef, board }: {
   groupRef: React.RefObject<THREE.Group | null>;
   boardRef: React.RefObject<THREE.Group | null>;
@@ -1181,27 +1205,31 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
       <BlobShadow r={0.6} />
       <group ref={boardRef}>
         {/* レール（縁）: 本体よりわずかに大きく下にずらし、厚み・エッジを強調 */}
-        <mesh geometry={railGeo} position={[0, 0.08, 0]} scale={[1.05, 1, 1.04]}>
+        <mesh visible={false} geometry={railGeo} position={[0, 0.08, 0]} scale={[1.05, 1, 1.04]}>
           <meshStandardMaterial color="#e7dfc8" roughness={0.55} />
         </mesh>
-        <mesh geometry={boardGeo} position={[0, 0.13, 0]} castShadow>
+        <mesh visible={false} geometry={boardGeo} position={[0, 0.13, 0]} castShadow>
           <meshPhysicalMaterial
             color={board.color} roughness={0.22} clearcoat={0.55} clearcoatRoughness={0.25}
           />
         </mesh>
         {patternTex && (
-          <mesh geometry={stripeGeo} position={[0, 0.185, 0]}>
+          <mesh visible={false} geometry={stripeGeo} position={[0, 0.185, 0]}>
             <meshPhysicalMaterial
               color="#ffffff" map={patternTex} roughness={0.28} clearcoat={0.5} clearcoatRoughness={0.3}
             />
           </mesh>
         )}
         {boltTex && (
-          <sprite position={[0, 0.23, 0.1]} scale={[0.4, 0.4, 1]}>
+          <sprite visible={false} position={[0, 0.23, 0.1]} scale={[0.4, 0.4, 1]}>
             <spriteMaterial map={boltTex} transparent depthWrite={false} />
           </sprite>
         )}
         <group ref={bodyRef} position={[0, 0.19, 0.1]}>
+          <Suspense fallback={null}>
+            <ImportedSurfer />
+          </Suspense>
+          <group visible={false}>
           {/* legs */}
           <mesh position={[-0.1, 0.18, 0.02]} rotation={[0.18, 0, 0.08]}>
             <capsuleGeometry args={[0.05, 0.26, 4, 8]} />
@@ -1283,6 +1311,7 @@ function Surfer({ groupRef, boardRef, bodyRef, board }: {
               </mesh>
             )
           )}
+          </group>
         </group>
       </group>
     </group>
