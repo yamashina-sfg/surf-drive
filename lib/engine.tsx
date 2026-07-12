@@ -1111,16 +1111,6 @@ function ShellCollectible() {
 
   return (
     <group>
-      <mesh position={[0, 0.74, -0.08]} scale={[0.86, 0.72, 0.3]}>
-        <sphereGeometry args={[1, 24, 18]} />
-        <meshBasicMaterial
-          color="#ef9ce9"
-          transparent
-          opacity={0.13}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
       <primitive
         object={shell}
         position={[-0.05, 0.74, 0]}
@@ -1202,16 +1192,6 @@ function TurboCollectible() {
 
   return (
     <group>
-      <mesh position={[0, 0.88, -0.08]} scale={[0.72, 0.92, 0.24]}>
-        <sphereGeometry args={[1, 24, 18]} />
-        <meshBasicMaterial
-          color="#68dfff"
-          transparent
-          opacity={0.2}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
       <primitive
         object={bolt}
         position={[-0.075, 0.873, 0.035]}
@@ -1248,16 +1228,6 @@ function FishCollectible({ variant }: { variant: "blue" | "gold" }) {
   const glowColor = variant === "gold" ? "#ffbd45" : "#75eaff";
   return (
     <group>
-      <mesh position={[0, 0.72, -0.08]} scale={[0.9, 0.62, 0.3]}>
-        <sphereGeometry args={[1, 24, 16]} />
-        <meshBasicMaterial
-          color={glowColor}
-          transparent
-          opacity={0.14}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
       <primitive
         object={fish}
         position={[0.11, 0.66, -0.04]}
@@ -1296,16 +1266,6 @@ function ShieldCollectible() {
 
   return (
     <group>
-      <mesh position={[0, 0.9, -0.08]} scale={[0.92, 0.92, 0.28]}>
-        <sphereGeometry args={[1, 24, 18]} />
-        <meshBasicMaterial
-          color="#52dcff"
-          transparent
-          opacity={0.18}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
       <primitive
         object={shield}
         position={[0, 0.9, 0]}
