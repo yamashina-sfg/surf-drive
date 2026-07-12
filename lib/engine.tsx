@@ -1265,6 +1265,54 @@ function FishCollectible({ variant }: { variant: "blue" | "gold" }) {
   );
 }
 
+function ShieldCollectible() {
+  const gltf = useLoader(GLTFLoader, "/models/shield.glb");
+  const texture = useLoader(THREE.TextureLoader, "/models/shield-texture.jpg");
+  const shield = useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    const clone = gltf.scene.clone(true);
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.material = new THREE.MeshPhysicalMaterial({
+          map: texture,
+          color: "#ffffff",
+          roughness: 0.22,
+          metalness: 0.28,
+          clearcoat: 0.88,
+          clearcoatRoughness: 0.16,
+        });
+      }
+    });
+    return clone;
+  }, [gltf.scene, texture]);
+
+  return (
+    <group>
+      <mesh position={[0, 0.9, -0.08]} scale={[0.92, 0.92, 0.28]}>
+        <sphereGeometry args={[1, 24, 18]} />
+        <meshBasicMaterial
+          color="#52dcff"
+          transparent
+          opacity={0.18}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <primitive
+        object={shield}
+        position={[0, 0.9, 0]}
+        rotation={[0, -0.18, 0]}
+        scale={0.112}
+      />
+      <pointLight position={[0, 0.9, 0.4]} color="#58dfff" intensity={0.85} distance={3.2} />
+      <BlobShadow r={0.48} />
+    </group>
+  );
+}
+
 function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) => void }) {
   let body: React.ReactNode;
   switch (o.kind) {
@@ -1278,6 +1326,7 @@ function ObjView({ o, reg }: { o: Obj; reg: (id: number, g: THREE.Group | null) 
     case "fish2": body = <FishCollectible variant="gold" />; break;
     case "shell": body = <ShellCollectible />; break;
     case "turbo": body = <TurboCollectible />; break;
+    case "shield": body = <ShieldCollectible />; break;
     case "palm": body = <Palm seed={o.seed} />; break;
     case "island": body = <Island seed={o.seed} />; break;
     default: body = <ItemSprite kind={o.kind} />;
@@ -1606,6 +1655,7 @@ export function Scene({ stRef, bestRef, board, onHud, idle }: {
         y = Math.sin(st.time * 2.6 + o.bob) * 0.1;
       g.position.set(x, y, -o.z);
       if (o.kind === "fin") g.rotation.y = Math.sin(st.time * 1.5 + o.bob) * 0.3;
+      if (o.kind === "shield") g.rotation.y = Math.sin(st.time * 2 + o.bob) * 0.2;
     }
 
     // player
