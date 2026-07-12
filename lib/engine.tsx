@@ -900,33 +900,38 @@ void main() {
 // ---------- scenery / obstacle meshes ----------
 
 function Palm({ seed }: { seed: number }) {
-  const lean = (seed - 0.5) * 0.5;
-  const h = 2.2 + seed * 1.2;
-  const leaves = useMemo(() => {
-    const arr: { rot: number; tilt: number }[] = [];
-    for (let i = 0; i < 6; i++)
-      arr.push({ rot: (i / 6) * Math.PI * 2 + seed * 7, tilt: 0.9 + (i % 3) * 0.12 });
-    return arr;
-  }, [seed]);
+  const gltf = useLoader(GLTFLoader, "/models/beach-palm.glb");
+  const texture = useLoader(THREE.TextureLoader, "/models/beach-palm-texture.webp");
+  const palm = useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    const clone = gltf.scene.clone(true);
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.material = new THREE.MeshStandardMaterial({
+          map: texture,
+          color: "#ffffff",
+          roughness: 0.72,
+          metalness: 0,
+          transparent: true,
+          alphaTest: 0.28,
+          side: THREE.DoubleSide,
+        });
+      }
+    });
+    return clone;
+  }, [gltf.scene, texture]);
+  const scale = 0.014 + seed * 0.003;
+
   return (
-    <group rotation={[0, 0, lean]}>
-      <mesh position={[0, h / 2, 0]}>
-        <cylinderGeometry args={[0.09, 0.16, h, 6]} />
-        <meshStandardMaterial color="#8a5a33" roughness={0.9} />
-      </mesh>
-      {leaves.map((l, i) => (
-        <group key={i} position={[0, h, 0]} rotation={[0, l.rot, 0]}>
-          <mesh position={[0.62, 0.08, 0]} rotation={[0, 0, -l.tilt]} scale={[1, 0.22, 0.5]}>
-            <coneGeometry args={[0.5, 1.5, 5]} />
-            <meshStandardMaterial color="#2f9e44" roughness={0.8} />
-          </mesh>
-        </group>
-      ))}
-      <mesh position={[0, h + 0.05, 0]}>
-        <sphereGeometry args={[0.14, 8, 6]} />
-        <meshStandardMaterial color="#5c8a1e" roughness={0.8} />
-      </mesh>
-    </group>
+    <primitive
+      object={palm}
+      position={[0, scale * 100, 0]}
+      rotation={[0, seed * Math.PI * 2, (seed - 0.5) * 0.08]}
+      scale={scale}
+    />
   );
 }
 
