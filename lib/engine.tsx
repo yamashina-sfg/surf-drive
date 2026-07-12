@@ -1082,47 +1082,47 @@ function SharkFin() {
 }
 
 function ShellCollectible() {
-  const shellGeo = useMemo(() => {
-    const s = new THREE.Shape();
-    s.moveTo(0, -0.38);
-    s.bezierCurveTo(-0.42, -0.28, -0.52, 0.2, -0.34, 0.46);
-    s.bezierCurveTo(-0.16, 0.68, 0.16, 0.68, 0.34, 0.46);
-    s.bezierCurveTo(0.52, 0.2, 0.42, -0.28, 0, -0.38);
-    return new THREE.ExtrudeGeometry(s, {
-      depth: 0.16,
-      bevelEnabled: true,
-      bevelSize: 0.045,
-      bevelThickness: 0.04,
-      bevelSegments: 4,
-      curveSegments: 18,
+  const gltf = useLoader(GLTFLoader, "/models/spondylus.glb");
+  const shell = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const top = child.name.toLowerCase().includes("top");
+        child.castShadow = true;
+        child.material = new THREE.MeshPhysicalMaterial({
+          color: top ? "#d567c8" : "#f3c6d9",
+          emissive: top ? "#6f225e" : "#7d435c",
+          emissiveIntensity: top ? 0.16 : 0.08,
+          roughness: top ? 0.34 : 0.24,
+          metalness: 0.015,
+          clearcoat: top ? 0.65 : 0.82,
+          clearcoatRoughness: 0.2,
+          side: THREE.DoubleSide,
+        });
+      }
     });
-  }, []);
+    return clone;
+  }, [gltf.scene]);
+
   return (
-    <group position={[0, 0.72, 0]} scale={1.05}>
-      <mesh geometry={shellGeo} position={[0, 0, -0.08]} castShadow>
-        <meshPhysicalMaterial
-          color="#b96ff2"
-          roughness={0.24}
-          metalness={0.02}
-          clearcoat={0.72}
-          clearcoatRoughness={0.2}
+    <group>
+      <mesh position={[0, 0.74, -0.08]} scale={[0.86, 0.72, 0.3]}>
+        <sphereGeometry args={[1, 24, 18]} />
+        <meshBasicMaterial
+          color="#ef9ce9"
+          transparent
+          opacity={0.13}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {[-0.3, -0.15, 0, 0.15, 0.3].map((r, i) => (
-        <mesh key={r} position={[r * 0.38, 0.08, 0.145]} rotation={[0, 0, -r]}>
-          <capsuleGeometry args={[0.018, 0.58 - Math.abs(r) * 0.35, 5, 10]} />
-          <meshStandardMaterial
-            color={i % 2 ? "#f3c7ff" : "#ffffff"}
-            emissive="#dba6ff"
-            emissiveIntensity={0.2}
-            roughness={0.3}
-          />
-        </mesh>
-      ))}
-      <mesh position={[0, -0.28, 0.18]}>
-        <sphereGeometry args={[0.085, 18, 12]} />
-        <meshPhysicalMaterial color="#fff8ff" roughness={0.1} clearcoat={1} />
-      </mesh>
+      <primitive
+        object={shell}
+        position={[-0.05, 0.74, 0]}
+        rotation={[-Math.PI / 2, 0, 0.12]}
+        scale={0.088}
+      />
+      <pointLight position={[0, 0.75, 0.35]} color="#ef9ce9" intensity={0.65} distance={2.6} />
       <BlobShadow r={0.42} />
     </group>
   );
